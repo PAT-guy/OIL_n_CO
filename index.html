@@ -9260,8 +9260,8 @@ function _doStartGame(){
   // --- Onglet Références : à quoi ressemble chaque lithologie et chaque fluide, positionné sur les
   // MÊMES échelles que les pistes du log réel, pour que la lecture du log s'appuie sur un repère vu
   // avant de jouer plutôt que sur une mémorisation abstraite de chiffres.
-  function miniRangeBar(lo, hi, scaleLo, scaleHi, color, logScale){
-    const W=140, H=12;
+  function miniRangeBar(lo, hi, scaleLo, scaleHi, color, logScale, W){
+    W = W || 140; const H=12;
     const toX = v => {
       const cv = clamp(v, scaleLo, scaleHi);
       return logScale
@@ -9273,15 +9273,19 @@ function _doStartGame(){
   }
   function renderReferences(){
     const TC = colorblindMode ? TRACK_COLORS.cb : TRACK_COLORS.normal;
-    let html = `<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Repères approximatifs : chaque lithologie varie un peu d'un scénario à l'autre, mais se situe toujours autour de ces plages. Les barres sont positionnées sur les mêmes échelles que les pistes du log (GR 0-150 API, PEF 0-6 b/e, RHOB 1,95-2,95 g/cc).</div>`;
-    html += `<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--muted);text-align:left;"><th>Lithologie</th><th>GR</th><th>PEF</th><th>RHOB</th></tr>`;
+    let html = `<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Repères approximatifs : chaque lithologie varie un peu d'un scénario à l'autre, mais se situe toujours autour de ces plages. Les barres sont positionnées sur les mêmes échelles que les pistes du log (GR 0-150 API, PEF 0-6 b/e, RHOB 1,95-2,95 g/cc, DT 40-140 µs/ft) ; les chiffres à côté donnent la valeur exacte.</div>`;
+    html += `<div style="font-size:10.5px;color:var(--text);background:var(--panel2);border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.6;">
+      🔑 <b>Grès propre, calcaire et dolomie ont tous un GR bas</b> — le GR seul ne les distingue pas. Regardez plutôt le <b>PEF</b>, qui lui varie nettement d'une lithologie à l'autre indépendamment de la porosité : grès ~1,8 · dolomie ~3,1 · calcaire ~5,1. Le <b>DT (sonique)</b> confirme : la dolomie est la plus rapide (~44 µs/ft), le calcaire un peu plus lent (~48), le grès nettement plus lent (~55). Les deux doivent converger avant de conclure.
+    </div>`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--muted);text-align:left;"><th>Lithologie</th><th>GR</th><th>PEF</th><th>RHOB</th><th>DT</th></tr>`;
     Object.keys(LITHOS).forEach(k=>{
       const L = LITHOS[k];
       html += `<tr style="border-top:1px solid var(--line);">
         <td style="padding:6px 4px;white-space:nowrap;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${lithoFillCss(k)};margin-right:5px;vertical-align:middle;"></span>${L.label}</td>
-        <td style="padding:6px 4px;">${miniRangeBar(L.gr[0],L.gr[1],0,150,TC.gr)}</td>
-        <td style="padding:6px 4px;">${miniRangeBar(L.pef-0.15,L.pef+0.15,0,6,TC.pef)}</td>
-        <td style="padding:6px 4px;">${miniRangeBar(L.rhobMatrix-0.03,L.rhobMatrix+0.03,1.95,2.95,TC.rhob)}</td>
+        <td style="padding:6px 4px;white-space:nowrap;">${miniRangeBar(L.gr[0],L.gr[1],0,150,TC.gr,false,64)} <span style="color:var(--muted);">${L.gr[0]}-${L.gr[1]}</span></td>
+        <td style="padding:6px 4px;white-space:nowrap;">${miniRangeBar(L.pef-0.15,L.pef+0.15,0,6,TC.pef,false,64)} <span style="color:var(--muted);">${L.pef.toFixed(2)}</span></td>
+        <td style="padding:6px 4px;white-space:nowrap;">${miniRangeBar(L.rhobMatrix-0.03,L.rhobMatrix+0.03,1.95,2.95,TC.rhob,false,64)} <span style="color:var(--muted);">${L.rhobMatrix.toFixed(2)}</span></td>
+        <td style="padding:6px 4px;white-space:nowrap;">${miniRangeBar(L.dtMatrix-2,L.dtMatrix+2,40,140,TC.dt,false,64)} <span style="color:var(--muted);">${L.dtMatrix}</span></td>
       </tr>`;
     });
     html += `</table>`;
