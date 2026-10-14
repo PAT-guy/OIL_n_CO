@@ -8152,14 +8152,23 @@ function _doStartGame(){
       <div class="lg-box" id="lgCompletionBox" style="display:none;">
         <div class="lg-box-title">⛏ Décision de complétion</div>
         <div style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.5;text-align:justify;">
-          Laquelle de vos zones produiriez-vous ? Rien dans les diagraphies classiques ne montre directement la perméabilité — seule la carotte en donne un indice (texture, connexion des pores). Décidez si une stimulation (fracturation) est nécessaire.
+          But final, à l'échelle du puits : le met-on en production, ou vaut-il mieux l'abandonner tout de suite ? Rien dans les diagraphies classiques ne montre directement la perméabilité — seule la carotte en donne un indice (texture, connexion des pores) — d'où l'intérêt de trancher vite plutôt que de s'acharner sur un puits sec.
         </div>
-        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;">Zone à produire</label>
-        <div class="lg-chiprow" id="lgProdZoneChips"></div>
-        <label style="font-size:11px;color:var(--muted);display:block;margin:10px 0 5px;">Fracturer ?</label>
-        <div class="lg-chiprow" id="lgFrackChips">
-          <button class="lg-chip" data-frack="0">Non — écoulement naturel</button>
-          <button class="lg-chip" data-frack="1">Oui — stimulation nécessaire</button>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;">Décision</label>
+        <div class="lg-chiprow" id="lgActionChips">
+          <button class="lg-chip" data-action="abandon">🔒 Fermer le puits (abandon)</button>
+          <button class="lg-chip" data-action="produce">▶ Mettre en production</button>
+        </div>
+        <div id="lgProduceDetail" style="display:none;margin-top:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;">Zone à produire</label>
+          <div class="lg-chiprow" id="lgProdZoneChips"></div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin:10px 0 5px;">Méthode de complétion</label>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Le choix entre acidification et fracturation dépend de la lithologie, pas seulement de la perméabilité : l'acide dissout les carbonates (calcaire, dolomie) mais n'a aucun effet sur le quartz d'un grès ou d'un shale.</div>
+          <div class="lg-chiprow" id="lgMethodChips">
+            <button class="lg-chip" data-method="natural">Écoulement naturel</button>
+            <button class="lg-chip" data-method="acid">🧪 Acidification</button>
+            <button class="lg-chip" data-method="frack">⚡ Fracturation</button>
+          </div>
         </div>
       </div>
       <div class="lg-box">
@@ -9085,8 +9094,10 @@ function _doStartGame(){
   let zoneFluids = [];   // fluide (ou null) par zone — clé FLUIDS ou 'none'
   let zoneConf = [];     // 'sur' | 'incertain' | null par zone
   let pickedEnv = '';
+  let pickedAction = null;      // 'abandon' | 'produce' | null
   let pickedProdZoneIdx = null; // index dans zoneLiths de la zone choisie pour la production
-  let pickedFrack = null;       // true/false/null — décision de fracturation sur cette zone
+  let pickedMethod = null;      // 'natural' | 'acid' | 'frack' | null
+  const CARBONATE_LITHS = ['limestone','dolomite']; // l'acide dissout les carbonates, pas le quartz
   let hintTokens = 3;
   let lastFinalScore = null;
 
@@ -9209,27 +9220,32 @@ function _doStartGame(){
     });
   }
   function renderProdZoneChips(){
+    const actionBox = document.getElementById('lgActionChips');
+    if(!actionBox) return;
+    actionBox.querySelectorAll('[data-action]').forEach(chip=>{
+      chip.classList.toggle('active', pickedAction===chip.dataset.action);
+    });
+    document.getElementById('lgProduceDetail').style.display = pickedAction==='produce' ? 'block' : 'none';
+
     const box = document.getElementById('lgProdZoneChips');
-    if(!box) return;
     const b = zoneBoundaries();
-    const zoneChips = zoneLiths.map((lith,i)=>{
+    box.innerHTML = zoneLiths.map((lith,i)=>{
       if(!lith) return '';
       const fluidTxt = zoneFluids[i] ? (zoneFluids[i]==='none' ? 'non réserv.' : FLUIDS[zoneFluids[i]].label) : 'fluide non précisé';
       return `<button class="lg-chip ${pickedProdZoneIdx===i?'active':''}" data-zone="${i}">${fmtDepth(b[i])}–${fmtDepth(b[i+1])} (${fluidTxt})</button>`;
     }).join('');
-    box.innerHTML = zoneChips + `<button class="lg-chip ${pickedProdZoneIdx===-1?'active':''}" data-zone="-1">❌ Aucune zone commerciale</button>`;
     box.querySelectorAll('[data-zone]').forEach(chip=>{
       chip.addEventListener('click', ()=>{ pickedProdZoneIdx = parseInt(chip.dataset.zone,10); sndClick(); renderProdZoneChips(); });
     });
-    const frackBox = document.getElementById('lgFrackChips');
-    if(frackBox){
-      frackBox.querySelectorAll('[data-frack]').forEach(chip=>{
-        chip.classList.toggle('active', pickedFrack===(chip.dataset.frack==='1'));
-      });
-    }
+    document.getElementById('lgMethodChips').querySelectorAll('[data-method]').forEach(chip=>{
+      chip.classList.toggle('active', pickedMethod===chip.dataset.method);
+    });
   }
-  document.getElementById('lgFrackChips')?.querySelectorAll('[data-frack]').forEach(chip=>{
-    chip.addEventListener('click', ()=>{ pickedFrack = chip.dataset.frack==='1'; sndClick(); renderProdZoneChips(); });
+  document.getElementById('lgActionChips')?.querySelectorAll('[data-action]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{ pickedAction = chip.dataset.action; sndClick(); renderProdZoneChips(); });
+  });
+  document.getElementById('lgMethodChips')?.querySelectorAll('[data-method]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{ pickedMethod = chip.dataset.method; sndClick(); renderProdZoneChips(); });
   });
   function renderGlossary(){
     document.getElementById('lgGlossaryBody').innerHTML = GLOSSARY.map(([t,d])=>
@@ -9483,8 +9499,9 @@ function _doStartGame(){
     scenario = genScenario(cfg);
     initZones();
     pickedEnv = '';
+    pickedAction = null;
     pickedProdZoneIdx = null;
-    pickedFrack = null;
+    pickedMethod = null;
     gamePhase = 1;
     phase1Score = null;
     lastFinalScore = null;
@@ -9552,35 +9569,42 @@ function _doStartGame(){
 
     const envOk = pickedEnv === sc.envKey;
 
-    // Décision de complétion (zone à produire + fracturation) : seulement évaluée une fois les
-    // carottes vues, puisque la perméabilité réelle (donc le besoin de fracturer) n'est indiquée
-    // nulle part dans les diagraphies — seule la carotte en donne un indice texturel.
+    // Décision de complétion (fermer / produire → où → comment) : seulement évaluée une fois les
+    // carottes vues, puisque la perméabilité réelle — donc le besoin de stimuler et le choix de la
+    // méthode — n'est indiquée nulle part dans les diagraphies, seule la carotte en donne un indice.
+    // L'objectif pédagogique : trancher vite plutôt que de s'acharner sur un puits qui ne vaut rien.
     let completionFeedback = null;
     if(gamePhase===2){
       const hcLayer = sc.layers.find(l=>l.isReservoir && (l.fluid==='oil'||l.fluid==='gas'));
+      const trueAction = hcLayer ? 'produce' : 'abandon';
+      const actionOk = pickedAction === trueAction;
+      let zoneOk = null, methodOk = null, zoneDetail = null, methodDetail = null, actionDetail;
       if(hcLayer){
+        actionDetail = actionOk
+          ? `Bonne décision : ce puits mérite d'être mis en production (${FLUIDS[hcLayer.fluid].label} présent).`
+          : `Ce puits contient pourtant de l'hydrocarbure valorisable (${FLUIDS[hcLayer.fluid].label}, ${fmtDepth(hcLayer.top)}–${fmtDepth(hcLayer.base)}) : l'abandonner aurait été une erreur.`;
         const pickedZone = (pickedProdZoneIdx!==null && pickedProdZoneIdx>=0 && zoneLiths[pickedProdZoneIdx]) ? {top:b[pickedProdZoneIdx], base:b[pickedProdZoneIdx+1]} : null;
         const overlap = pickedZone ? Math.max(0, Math.min(pickedZone.base,hcLayer.base)-Math.max(pickedZone.top,hcLayer.top)) : 0;
-        const zoneOk = overlap >= (hcLayer.base-hcLayer.top)*0.5;
-        const frackOk = zoneOk && pickedFrack===hcLayer.tight;
-        completionFeedback = {
-          zoneOk, frackOk,
-          zoneDetail: zoneOk ? `Bon choix : cette zone contient bien l'hydrocarbure (${FLUIDS[hcLayer.fluid].label}).` : `Zone de production attendue : ${fmtDepth(hcLayer.top)}–${fmtDepth(hcLayer.base)} (${FLUIDS[hcLayer.fluid].label}).`,
-          frackDetail: pickedFrack===null ? 'Décision de fracturation non prise.' : (frackOk
-            ? (hcLayer.tight ? 'Fracturation nécessaire ici, bien vu — la carotte montrait des pores mal connectés.' : 'Écoulement naturel, pas besoin de fracturer : correct, vous auriez évité un coût inutile.')
-            : (hcLayer.tight ? 'Cette roche était en réalité peu perméable malgré sa porosité (voir la carotte) : une stimulation était nécessaire.' : 'Cette roche était en réalité bien perméable (voir la carotte) : fracturer ici aurait été un coût inutile.'))
-        };
+        zoneOk = overlap >= (hcLayer.base-hcLayer.top)*0.5;
+        zoneDetail = zoneOk ? `Bon choix de zone : elle contient bien l'hydrocarbure.` : `Zone de production attendue : ${fmtDepth(hcLayer.top)}–${fmtDepth(hcLayer.base)}.`;
+        const trueMethod = !hcLayer.tight ? 'natural' : (CARBONATE_LITHS.includes(hcLayer.lith) ? 'acid' : 'frack');
+        methodOk = pickedMethod === trueMethod;
+        methodDetail = methodOk
+          ? (trueMethod==='natural' ? 'Écoulement naturel suffisant, bien vu — pas de coût de stimulation inutile.'
+            : trueMethod==='acid' ? 'Acidification pertinente ici : roche carbonatée (l\'acide dissout le calcaire/la dolomie), bien vu.'
+            : 'Fracturation nécessaire ici, bien vu — roche tight non carbonatée, l\'acide n\'y aurait rien fait.')
+          : (trueMethod==='natural' ? 'Cette roche était en réalité bien perméable (voir la carotte) : une stimulation aurait été un coût inutile.'
+            : trueMethod==='acid' ? `Roche carbonatée (${LITHOS[hcLayer.lith].label}) et peu perméable : l'acide aurait dissous la roche et ouvert des chenaux, la fracturation n'était pas le bon outil ici.`
+            : `Roche non carbonatée (${LITHOS[hcLayer.lith].label}) et peu perméable : l'acide n'a aucun effet sur le quartz, seule la fracturation aurait fonctionné.`);
       } else {
-        const zoneOk = pickedProdZoneIdx===-1;
-        completionFeedback = {
-          zoneOk, frackOk:true,
-          zoneDetail: zoneOk ? 'Bon réflexe : aucune zone ne mérite d\'être mise en production ici.' : 'Aucune des zones ne contient d\'hydrocarbure valorisable : la bonne décision était de ne rien produire.',
-          frackDetail: null
-        };
+        actionDetail = actionOk
+          ? 'Bon réflexe : aucune zone ne mérite d\'être mise en production, autant fermer le puits tout de suite.'
+          : 'Aucune des zones ne contient d\'hydrocarbure valorisable : la bonne décision était de fermer le puits.';
       }
+      completionFeedback = {actionOk, zoneOk, methodOk, actionDetail, zoneDetail, methodDetail};
     }
-    const completionItems = completionFeedback ? (completionFeedback.frackDetail===null ? 1 : 2) : 0;
-    const completionHits = completionFeedback ? ((completionFeedback.zoneOk?1:0) + (completionFeedback.frackDetail===null?0:(completionFeedback.frackOk?1:0))) : 0;
+    const completionItems = completionFeedback ? (completionFeedback.zoneOk!==null ? 3 : 1) : 0;
+    const completionHits = completionFeedback ? ((completionFeedback.actionOk?1:0) + (completionFeedback.zoneOk!==null ? (completionFeedback.zoneOk?1:0)+(completionFeedback.methodOk?1:0) : 0)) : 0;
 
     const totalItems = sc.layers.length*2 + 1 + completionItems;
     const totalHits = zoneHits + fluidHits + (envOk?1:0) + completionHits;
@@ -9596,9 +9620,10 @@ function _doStartGame(){
     html += `<div class="lg-fb-item ${res.envOk?'lg-fb-ok':'lg-fb-bad'}">${res.envOk?'✓':'✗'} Environnement de dépôt : ${res.envOk?'correct':'attendu '+sc.env.label}. ${sc.env.note}</div>`;
     if(res.completionFeedback){
       const cf = res.completionFeedback;
-      html += `<div class="lg-fb-item ${cf.zoneOk?'lg-fb-ok':'lg-fb-bad'}">${cf.zoneOk?'✓':'✗'} Zone à produire — ${cf.zoneDetail}</div>`;
-      if(cf.frackDetail!==null){
-        html += `<div class="lg-fb-item ${cf.frackOk?'lg-fb-ok':'lg-fb-bad'}">${cf.frackOk?'✓':'✗'} Fracturation — ${cf.frackDetail}</div>`;
+      html += `<div class="lg-fb-item ${cf.actionOk?'lg-fb-ok':'lg-fb-bad'}">${cf.actionOk?'✓':'✗'} Décision — ${cf.actionDetail}</div>`;
+      if(cf.zoneOk!==null){
+        html += `<div class="lg-fb-item ${cf.zoneOk?'lg-fb-ok':'lg-fb-bad'}">${cf.zoneOk?'✓':'✗'} Zone à produire — ${cf.zoneDetail}</div>`;
+        html += `<div class="lg-fb-item ${cf.methodOk?'lg-fb-ok':'lg-fb-bad'}">${cf.methodOk?'✓':'✗'} Méthode de complétion — ${cf.methodDetail}</div>`;
       }
     }
     return html;
