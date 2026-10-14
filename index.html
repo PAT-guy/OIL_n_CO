@@ -8786,7 +8786,12 @@ function _doStartGame(){
     const depthTop0 = Math.round(randRange(rng, 1800, 2600));
     let curDepth = depthTop0;
     const layers = [];
-    seqLithos.forEach((lk, i)=>{
+    // env.seq est écrit dans l'ordre de dépôt (le plus ancien d'abord, ex. le prodelta argileux
+    // avant le front de delta sableux pour un "coarsening-up"). Le plus ancien se dépose en premier
+    // et finit donc le plus PROFOND (principe de superposition) — on construit la colonne du bas vers
+    // le haut en parcourant seqLithos à l'envers, sinon toute séquence coarsening/fining-up se
+    // retrouve inversée par rapport à ce que son propre texte explicatif annonce.
+    seqLithos.slice().reverse().forEach((lk, i)=>{
       const thick = Math.round(randRange(rng, 12, 38));
       layers.push({lith:lk, top:curDepth, base:curDepth+thick, grTrend:null});
       curDepth += thick;
