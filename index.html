@@ -8881,19 +8881,55 @@ function _doStartGame(){
     tracks.forEach(t=>{
       svgParts.push(`<rect x="${t.x}" y="${marginTop}" width="${t.w}" height="${H-marginTop-marginBot}" fill="none" stroke="var(--line)" stroke-width="0.6"/>`);
       svgParts.push(`<text x="${t.x}" y="12" font-size="9" fill="var(--muted)" font-family="monospace">${t.label}</text>`);
+      // Échelle numérique (bornes lo/hi) sous le nom de piste, comme sur un vrai log : sans elles,
+      // la position d'une courbe dans sa piste ne veut rien dire pour qui ne connaît pas déjà les
+      // bornes par cœur.
+      if(t.key!=='nphi_rhob' && t.key!=='res'){
+        svgParts.push(`<text x="${t.x}" y="21" font-size="7" fill="var(--muted)" font-family="monospace">${t.lo}</text>`);
+        svgParts.push(`<text x="${t.x+t.w}" y="21" font-size="7" fill="var(--muted)" font-family="monospace" text-anchor="end">${t.hi}</text>`);
+      }
       if(t.key==='nphi_rhob'){
+        svgParts.push(`<text x="${t.x}" y="21" font-size="7" fill="${TC.nphi}" font-family="monospace">45%</text>`);
+        svgParts.push(`<text x="${t.x+t.w}" y="21" font-size="7" fill="${TC.nphi}" font-family="monospace" text-anchor="end">0%</text>`);
         // NPHI : 0-45% (frac direct, échelle "inversée" = porosité croît vers la gauche comme en vrai)
-        const nphiPts = sc.depths.map((d,i)=>{
+        const nphiFracs = sc.depths.map((d,i)=>{
           const v = clamp(sc.curves.nphi[i],0,0.45);
-          const frac = 1-(v/0.45);
-          return `${t.x+frac*t.w},${y(d).toFixed(1)}`;
-        }).join(' ');
-        // RHOB : 1.95-2.95 g/cc
-        const rhobPts = sc.depths.map((d,i)=>{
+          return 1-(v/0.45);
+        });
+        // RHOB : 1.95-2.95 g/cc, convertie sur la même échelle "porosité apparente" que NPHI (plus la
+        // roche est dense, moins poreuse elle paraît) pour que les deux courbes se superposent
+        // quand le gaz n'intervient pas.
+        const rhobFracs = sc.depths.map((d,i)=>{
           const v = clamp(sc.curves.rhob[i],1.95,2.95);
-          const frac = (v-1.95)/(2.95-1.95);
-          return `${t.x+frac*t.w},${y(d).toFixed(1)}`;
-        }).join(' ');
+          return (v-1.95)/(2.95-1.95);
+        });
+        const nphiPts = sc.depths.map((d,i)=>`${t.x+nphiFracs[i]*t.w},${y(d).toFixed(1)}`).join(' ');
+        const rhobPts = sc.depths.map((d,i)=>`${t.x+rhobFracs[i]*t.w},${y(d).toFixed(1)}`).join(' ');
+        // Effet gaz : zones où NPHI (porosité sous-estimée) se retrouve à droite de RHOB (porosité
+        // surestimée par la faible densité du gaz) — le "croisement" classique. On le remplit en
+        // ambre comme sur un log réel, bien plus lisible qu'un simple croisement de deux traits fins.
+        // Le modèle ne simule PAS l'effet argile du neutron (toute lithologie non-réservoir a une
+        // phi plancher de 0.02 avec une rhobMatrix propre, ce qui crée un écart géométrique NPHI/RHOB
+        // même sans gaz) : se fier à la seule forme des courbes shaderait aussi le shale. On ne
+        // colorie donc que là où la couche réelle contient effectivement du gaz.
+        function gasLayerAt(d){
+          const l = sc.layers.find(l=>d>=l.top && d<l.base) || sc.layers[sc.layers.length-1];
+          return l.isReservoir && l.fluid==='gas';
+        }
+        let runStart = -1;
+        for(let i=0;i<=sc.depths.length;i++){
+          const crossed = i<sc.depths.length && nphiFracs[i]>rhobFracs[i] && gasLayerAt(sc.depths[i]);
+          if(crossed && runStart===-1) runStart = i;
+          if(!crossed && runStart!==-1){
+            const runEnd = i-1;
+            if(runEnd>runStart){
+              const top = sc.depths.slice(runStart,runEnd+1).map((d,k)=>`${t.x+nphiFracs[runStart+k]*t.w},${y(d).toFixed(1)}`);
+              const bot = sc.depths.slice(runStart,runEnd+1).map((d,k)=>`${t.x+rhobFracs[runStart+k]*t.w},${y(d).toFixed(1)}`).reverse();
+              svgParts.push(`<polygon points="${top.join(' ')} ${bot.join(' ')}" fill="var(--amber)" opacity="0.3"/>`);
+            }
+            runStart = -1;
+          }
+        }
         svgParts.push(`<polyline points="${nphiPts}" fill="none" stroke="${TC.nphi}" stroke-width="1.1"/>`);
         svgParts.push(`<polyline points="${rhobPts}" fill="none" stroke="${TC.rhob}" stroke-width="1.1" stroke-dasharray="2,1.5"/>`);
         svgParts.push(`<text x="${t.x}" y="${H-6}" font-size="8" fill="${TC.nphi}" font-family="monospace">NPHI</text>`);
@@ -8903,6 +8939,17 @@ function _doStartGame(){
         // leur écart marque l'invasion de boue, donc la perméabilité, indépendamment du fluide.
         const deepPts = curveToPoints('res', t.x, t.w, t.lo, t.hi, true);
         const shalPts = curveToPoints('resShallow', t.x, t.w, t.lo, t.hi, true);
+        // Repères de décade (1, 10, 100, 1000 Ω·m) : une échelle log sans ses graduations internes
+        // ne se lit pas — impossible de situer une valeur entre les deux bornes de la piste.
+        for(let dec=1; dec<=1000; dec*=10){
+          if(dec<=t.lo || dec>=t.hi) continue;
+          const frac = (Math.log10(dec)-Math.log10(t.lo))/(Math.log10(t.hi)-Math.log10(t.lo));
+          const gx = t.x+frac*t.w;
+          svgParts.push(`<line x1="${gx}" y1="${marginTop}" x2="${gx}" y2="${H-marginBot}" stroke="var(--line)" stroke-width="0.4" stroke-dasharray="1,2" opacity="0.6"/>`);
+          svgParts.push(`<text x="${gx}" y="21" font-size="7" fill="var(--muted)" font-family="monospace" text-anchor="middle">${dec}</text>`);
+        }
+        svgParts.push(`<text x="${t.x}" y="21" font-size="7" fill="var(--muted)" font-family="monospace">${t.lo}</text>`);
+        svgParts.push(`<text x="${t.x+t.w}" y="21" font-size="7" fill="var(--muted)" font-family="monospace" text-anchor="end">${t.hi}</text>`);
         svgParts.push(`<polyline points="${shalPts}" fill="none" stroke="${TC.resShallow}" stroke-width="1" stroke-dasharray="2,1.5"/>`);
         svgParts.push(`<polyline points="${deepPts}" fill="none" stroke="${TC.resDeep}" stroke-width="1.2"/>`);
         svgParts.push(`<text x="${t.x}" y="${H-6}" font-size="8" fill="${TC.resDeep}" font-family="monospace">profonde</text>`);
