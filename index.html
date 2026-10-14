@@ -9378,6 +9378,14 @@ function _doStartGame(){
       <div class="lgpr-item">Score final : <b>${finalScore.pct}%</b> (${finalScore.totalHits}/${finalScore.totalItems})</div>
       <div class="lgpr-item">Environnement attendu : ${sc.env.label}</div>`;
     finalScore.zoneFeedback.forEach(f=>{ html += `<div class="lgpr-item">${f.ok?'[OK]':'[X]'} ${f.label} — ${f.detail}</div>`; });
+    if(finalScore.completionFeedback){
+      const cf = finalScore.completionFeedback;
+      html += `<div class="lgpr-item">${cf.actionOk?'[OK]':'[X]'} Décision — ${cf.actionDetail}</div>`;
+      if(cf.zoneOk!==null){
+        html += `<div class="lgpr-item">${cf.zoneOk?'[OK]':'[X]'} Zone à produire — ${cf.zoneDetail}</div>`;
+        html += `<div class="lgpr-item">${cf.methodOk?'[OK]':'[X]'} Méthode de complétion — ${cf.methodDetail}</div>`;
+      }
+    }
     const notes = document.getElementById('lgNotes').value.trim();
     if(notes) html += `<div class="lgpr-item">Notes : ${notes.replace(/</g,'&lt;')}</div>`;
     document.getElementById('lgPrintReport').innerHTML = html;
