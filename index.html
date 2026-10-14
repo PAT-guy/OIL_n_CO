@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>GeoExplorer V4.9</title>
+<title>GeoExplorer V4.95</title>
 <!-- Logo intégré (pas de fichier externe, cohérent avec le reste du projet) :
      un pli anticlinal (le cœur du jeu — trouver un piège structural) percé
      par un derrick, sur fond circulaire. La couleur s'ajuste dynamiquement
@@ -677,6 +677,11 @@ body.mobile-layout #mobileScreenBar{
         <div class="mode-name">🔄 Swipe de prospects</div>
         <div class="mode-desc">Un prospect à la fois (mini-coupe, log et Rock-Eval générés), swipez à droite pour forer, à gauche pour passer. 2min10 chrono, pensé pour jouer à une main sur téléphone.</div>
         <div class="mode-stats">Durée <span>2:10 chrono</span> · Format <span>Swipe</span></div>
+      </div>
+      <div class="mode-card mg-card" id="logGameOpenBtn" style="cursor:pointer;">
+        <div class="mode-name">📈 Labo Diagraphies &amp; Carottes</div>
+        <div class="mode-desc">Un puits synthétique avec jeu complet de diagraphies (GR, résistivité, neutron-densité, sonique, calibre) et échantillons de carotte. Découpez les zones, identifiez lithologie, environnement de dépôt et fluide. Artefacts de forage réalistes (diagraphies dégradées en zone d'élargissement).</div>
+        <div class="mode-stats">Durée <span>~5-10 min</span> · Format <span>Interprétation libre</span></div>
       </div>
     </div>
 
@@ -4493,7 +4498,12 @@ function renderSection(){
   const W=460, H=320, MARG={t:38, b:34, l:52, r:14};
   const PW = W-MARG.l-MARG.r, PH = H-MARG.t-MARG.b;
   svgEl.setAttribute('viewBox',`0 0 ${W} ${H}`);
-  svgEl.setAttribute('width','100%'); svgEl.setAttribute('height','auto');
+  // Pas de hauteur explicite : avec un viewBox et width:100%, le SVG se
+  // redimensionne nativement en conservant son ratio (comportement
+  // "height:auto" standard pour un élément remplacé) — poser
+  // height="auto" sur l'attribut SVG est invalide et logue une erreur
+  // console sans effet, contrairement à la propriété CSS du même nom.
+  svgEl.setAttribute('width','100%'); svgEl.removeAttribute('height');
 
   // ── Collecter tous les blocs du profil + leurs données estimées ──
   const profileBlocks = getProfileBlocks(G.sectionA, G.sectionB);
@@ -8017,6 +8027,235 @@ function _doStartGame(){
   </div>
 </div>
 
+<style>
+#logGameModal{position:fixed;inset:0;z-index:1200;background:var(--bg);display:none;flex-direction:column;align-items:center;overflow-y:auto;padding:16px 14px 50px;}
+#logGameModal.open{display:flex;}
+.lg-header{display:flex;justify-content:space-between;align-items:center;width:100%;max-width:1000px;margin-bottom:10px;gap:10px;flex-wrap:wrap;}
+.lg-title{font-size:16px;color:var(--amber);letter-spacing:1px;}
+.lg-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.lg-body{display:flex;gap:18px;width:100%;max-width:1000px;flex-wrap:wrap;align-items:flex-start;}
+.lg-logcol{flex:0 0 auto;position:relative;}
+.lg-sidecol{flex:1 1 320px;min-width:300px;}
+.lg-box{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:12px;margin-bottom:12px;}
+.lg-box-title{font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--line);}
+.lg-core-sample{border-left:3px solid var(--amber);padding:6px 10px;margin-bottom:8px;font-size:11px;line-height:1.6;background:var(--panel2);border-radius:0 6px 6px 0;}
+.lg-core-depth{color:var(--amber);font-weight:bold;}
+.lg-zone-card{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);cursor:pointer;}
+.lg-zone-card:active{background:var(--line);}
+.lg-zone-swatch{width:20px;height:20px;border-radius:5px;border:1px solid var(--line);flex:0 0 auto;}
+.lg-zone-depth{color:var(--muted);font-family:var(--mono);font-size:10px;flex:0 0 auto;min-width:92px;}
+.lg-zone-lith-label{flex:1 1 auto;}
+.lg-zone-lith-label.unset{color:var(--muted);font-style:italic;}
+.lg-zone-del{cursor:pointer;color:var(--red);text-align:center;background:none;border:none;font-size:14px;flex:0 0 auto;padding:2px 6px;}
+.lg-chiprow{display:flex;flex-wrap:wrap;gap:6px;}
+.lg-chip{border:1px solid var(--line);background:var(--panel2);color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 11px;border-radius:16px;cursor:pointer;}
+.lg-chip.active{border-color:var(--amber);color:var(--amber);background:rgba(200,150,50,.12);}
+.lg-handle{cursor:ns-resize;touch-action:none;}
+#lgLithSheet,#lgGlossarySheet,#lgCampaignSheet,#lgRefSheet{position:fixed;inset:0;z-index:1300;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;}
+#lgLithSheet.open,#lgGlossarySheet.open,#lgCampaignSheet.open,#lgRefSheet.open{display:flex;}
+#lgRefBody table{margin-bottom:4px;}
+#lgRefBody th{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;padding:3px 4px;}
+.lg-camp-level{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;}
+.lg-camp-level.locked{opacity:0.45;cursor:default;}
+.lg-camp-level.done{border-color:var(--green);}
+.lg-camp-badge{width:26px;height:26px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:12px;flex:0 0 auto;}
+.lg-camp-info{flex:1 1 auto;font-size:11px;}
+.lg-camp-score{font-size:10px;color:var(--muted);}
+#lgPrintReport{display:none;}
+@media print{
+  body > *:not(#lgPrintReport){display:none!important;}
+  #lgPrintReport{display:block!important;font-family:var(--mono);color:#000;}
+  #lgPrintReport h2{margin:0 0 6px;}
+  #lgPrintReport .lgpr-item{border-bottom:1px solid #ccc;padding:4px 0;font-size:12px;}
+}
+.lg-sheet-card{background:var(--panel);border:1px solid var(--line);border-top-left-radius:14px;border-top-right-radius:14px;width:100%;max-width:520px;padding:14px;max-height:80vh;overflow-y:auto;}
+.lg-sheet-title{font-size:12px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.lg-sheet-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+@media (min-width:480px){ .lg-sheet-grid{grid-template-columns:repeat(4,1fr);} }
+.lg-sheet-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 6px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);cursor:pointer;font-size:10.5px;text-align:center;}
+.lg-sheet-tile:active{background:var(--line);}
+.lg-sheet-swatch{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);}
+.lg-feedback{font-size:11px;line-height:1.7;}
+.lg-fb-ok{color:var(--green);}
+.lg-fb-bad{color:var(--red);}
+.lg-fb-item{border-bottom:1px solid var(--line);padding:6px 0;}
+.lg-score-big{font-size:26px;color:var(--amber);text-align:center;margin-bottom:6px;}
+#lgTip{position:absolute;background:var(--panel2);border:1px solid var(--line);padding:6px 9px;font-size:10.5px;line-height:1.6;pointer-events:none;display:none;z-index:50;border-radius:6px;white-space:nowrap;}
+.lg-hint-toggle{font-size:10px;color:var(--muted);text-decoration:underline;cursor:pointer;background:none;border:none;font-family:var(--mono);margin-bottom:8px;}
+.lg-hintbox{display:none;font-size:10.5px;color:var(--muted);line-height:1.7;background:var(--panel2);border-radius:6px;padding:8px 10px;margin-bottom:10px;}
+.lg-hintbox.show{display:block;}
+.lg-washout-note{font-size:10px;color:var(--red);margin-top:4px;}
+.lg-steps{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;}
+.lg-step{color:var(--muted);padding:4px 10px;border:1px solid var(--line);border-radius:12px;}
+.lg-step.active{color:var(--amber);border-color:var(--amber);}
+.lg-step.done{color:var(--green);border-color:var(--green);}
+.lg-step-arrow{color:var(--muted);}
+@media (max-width:760px){
+  .lg-body{flex-direction:column;}
+  .lg-logcol{width:100%;overflow-x:auto;}
+}
+</style>
+<div id="logGameModal">
+  <div class="lg-header">
+    <div class="lg-title">📈 Labo Diagraphies &amp; Carottes</div>
+    <div class="lg-actions">
+      <button class="lg-chip" id="lgSoundToggleBtn">🔈 Son</button>
+      <button class="lg-chip" id="lgChronoToggleBtn">⏱ Mode chrono</button>
+      <button class="lg-chip" id="lgColorblindToggleBtn">👁 Mode daltonien</button>
+      <button class="lg-chip" id="lgGlossaryBtn">📖 Glossaire</button>
+      <button class="lg-chip" id="lgRefBtn">📊 Références</button>
+      <button class="adv-reset" id="lgCampaignBtn">🎯 Mode campagne</button>
+      <button class="adv-reset" id="lgNewScenarioBtn">🎲 Libre</button>
+      <button class="cg-close" id="lgCloseBtn">✕ Fermer</button>
+    </div>
+  </div>
+  <div id="lgCampaignBar" style="display:none;font-size:11px;color:var(--amber);margin-bottom:6px;">🎯 Mode campagne — <span id="lgCampaignLabel">Niveau 1/6</span></div>
+  <div id="lgChronoBar" style="display:none;font-size:11px;color:var(--amber);margin-bottom:6px;">⏱ Temps restant : <b id="lgChronoTime">4:00</b> — l'interprétation étape 1 sera validée automatiquement à zéro.</div>
+  <div style="font-size:11px;color:var(--muted);max-width:1000px;width:100%;line-height:1.6;margin-bottom:10px;text-align:justify;">
+    Un puits synthétique vous attend avec son jeu complet de diagraphies et quelques échantillons de carotte. Découpez la colonne en zones, identifiez la lithologie et le fluide de chacune, puis concluez sur l'environnement de dépôt global. Attention : certaines diagraphies peuvent être localement dégradées (élargissement du trou, mauvaise centralisation d'outil) — regardez le calibre avant de juger la densité.
+  </div>
+  <button class="lg-hint-toggle" id="lgHintToggleBtn">▸ Aide-mémoire : comment lire ces diagraphies</button>
+  <div class="lg-hintbox" id="lgHintBox">
+    <b>SP (potentiel spontané)</b> : argilosité et perméabilité. Reste sur la ligne de base en face d'un shale imperméable ; dévie négativement en face d'un banc propre et perméable (sable, carbonate poreux), d'autant plus que le lit est propre.<br>
+    <b>Gamma Ray (GR)</b> : argilosité. Bas (&lt;40 API) = grès/calcaire propre. Élevé (&gt;90 API) = shale.<br>
+    <b>Résistivité profonde vs peu profonde</b> : la profonde indique le type de fluide (basse = eau salée, élevée à très élevée = hydrocarbures, le gaz étant le plus résistant). L'écart avec la peu profonde indique en plus la perméabilité : en zone perméable la boue envahit la formation et la peu profonde tire vers la résistivité du filtrat de boue ; en zone imperméable (shale, sel) les deux courbes restent superposées, même si le fluide semble favorable.<br>
+    <b>Neutron-Densité</b> : porosité et effet gaz. Les deux courbes se suivent en zone à eau ; un net <b>croisement</b> (neutron plus bas que densité en équivalent calcaire) signale la présence de gaz.<br>
+    <b>PEF (facteur photoélectrique)</b> : signature de la lithologie, indépendante de la porosité — contrairement à RHOB/NPHI qui varient aussi avec le fluide et le vide poreux. Utile pour trancher entre grès (~1.8), dolomie (~3.1), shale (~3.4) et calcaire (~5.1) quand neutron-densité seul reste ambigu.<br>
+    <b>Sonique (DT)</b> : temps de parcours, augmente avec la porosité et diminue avec la compaction/cimentation.<br>
+    <b>Calibre (CALI)</b> : diamètre réel du trou. Un pic au-dessus du diamètre nominal = élargissement (washout) : la densité, le neutron, le PEF et le SP y sont alors peu fiables (mauvais plaquage de la patin, mauvaise centralisation, mauvais contact d'électrode).<br>
+    <b>Forme de la courbe GR avec la profondeur</b> : cylindrique (chenal fluviatile/éolien, base nette), en entonnoir/décroissante vers le haut (progradation deltaïque), en cloche/croissante vers le haut (rétrogradation, abandon de chenal).
+  </div>
+  <div class="lg-steps" id="lgSteps">
+    <span class="lg-step active" id="lgStepTag1">① Diagraphies seules</span>
+    <span class="lg-step-arrow">→</span>
+    <span class="lg-step" id="lgStepTag2">② + Carottes</span>
+  </div>
+  <div class="lg-body">
+    <div class="lg-logcol">
+      <svg id="lgSvg"></svg>
+      <div id="lgTip"></div>
+    </div>
+    <div class="lg-sidecol">
+      <div class="lg-box" id="lgPhase1Box">
+        <div class="lg-box-title">Étape 1 — Interprétation à partir des diagraphies</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.5;text-align:justify;">
+          Les diagraphies doivent être cohérentes entre elles (GR, résistivité, neutron-densité, sonique, calibre). Découpez les zones et proposez une première interprétation avant de voir les carottes.
+        </div>
+      </div>
+      <div class="lg-box" id="lgCoreBox" style="display:none;">
+        <div class="lg-box-title">🪨 Étape 2 — Échantillons de carotte</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.5;text-align:justify;">
+          Figures sédimentaires, fossiles et granulométrie détaillée : ajustez votre interprétation si ces observations contredisent ou précisent ce que les diagraphies suggéraient.
+        </div>
+        <div id="lgCoreList"></div>
+      </div>
+      <div class="lg-box" id="lgCompletionBox" style="display:none;">
+        <div class="lg-box-title">⛏ Décision de complétion</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.5;text-align:justify;">
+          But final, à l'échelle du puits : le met-on en production, ou vaut-il mieux l'abandonner tout de suite ? Rien dans les diagraphies classiques ne montre directement la perméabilité — seule la carotte en donne un indice (texture, connexion des pores) — d'où l'intérêt de trancher vite plutôt que de s'acharner sur un puits sec.
+        </div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;">Décision</label>
+        <div class="lg-chiprow" id="lgActionChips">
+          <button class="lg-chip" data-action="abandon">🔒 Fermer le puits (abandon)</button>
+          <button class="lg-chip" data-action="produce">▶ Mettre en production</button>
+        </div>
+        <div id="lgProduceDetail" style="display:none;margin-top:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;">Zone à produire</label>
+          <div class="lg-chiprow" id="lgProdZoneChips"></div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin:10px 0 5px;">Méthode de complétion</label>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Le choix entre acidification et fracturation dépend de la lithologie, pas seulement de la perméabilité : l'acide dissout les carbonates (calcaire, dolomie) mais n'a aucun effet sur le quartz d'un grès ou d'un shale.</div>
+          <div class="lg-chiprow" id="lgMethodChips">
+            <button class="lg-chip" data-method="natural">Écoulement naturel</button>
+            <button class="lg-chip" data-method="acid">🧪 Acidification</button>
+            <button class="lg-chip" data-method="frack">⚡ Fracturation</button>
+          </div>
+        </div>
+      </div>
+      <div class="lg-box">
+        <div class="lg-box-title">Zones interprétées</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Glissez les poignées 🟡 sur le log pour délimiter les zones, puis touchez une bande pour choisir sa lithologie, son fluide et votre degré de confiance.</div>
+        <div id="lgZoneList"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+          <button class="adv-reset" id="lgAddZoneBtn">+ Ajouter une limite</button>
+          <button class="adv-reset" id="lgHintTokenBtn">💡 Indice (<span id="lgHintCount">3</span>)</button>
+        </div>
+        <div id="lgHintOutput" style="display:none;font-size:10.5px;color:var(--amber);margin-top:6px;line-height:1.5;background:var(--panel2);border-radius:6px;padding:7px 9px;"></div>
+      </div>
+      <div class="lg-box">
+        <div class="lg-box-title">Conclusions globales</div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:5px;">Environnement de dépôt</label>
+          <div class="lg-chiprow" id="lgEnvChips"></div>
+        </div>
+        <button class="start-btn" id="lgValidateBtn" style="margin-top:10px;">✓ Valider l'interprétation (diagraphies seules)</button>
+      </div>
+      <div class="lg-box">
+        <div class="lg-box-title">📝 Notes libres</div>
+        <textarea id="lgNotes" placeholder="Votre raisonnement, vos doutes, ce que vous regarderez après les carottes..." style="width:100%;min-height:60px;background:var(--bg);border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:10.5px;border-radius:6px;padding:7px;resize:vertical;"></textarea>
+      </div>
+      <div class="lg-box" id="lgPhase1ResultBox" style="display:none;">
+        <div class="lg-box-title">Résultat étape 1 (diagraphies seules)</div>
+        <div id="lgPhase1Result" class="lg-feedback"></div>
+        <button class="start-btn" id="lgRevealCoresBtn" style="margin-top:8px;">🪨 Récupérer les carottes →</button>
+      </div>
+      <div class="lg-box" id="lgFeedbackBox" style="display:none;">
+        <div class="lg-box-title">Résultat final (diagraphies + carottes)</div>
+        <div id="lgFeedback" class="lg-feedback"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <button class="adv-reset" id="lgPrintBtn">🖨 Rapport imprimable</button>
+          <button class="adv-reset" id="lgSaveClasseBtn">💾 Enregistrer pour la classe</button>
+        </div>
+      </div>
+      <div class="lg-box">
+        <div class="lg-box-title">📔 Carnet de terrain</div>
+        <div id="lgStamps" style="font-size:18px;letter-spacing:4px;margin-bottom:6px;"></div>
+        <div id="lgHistory" style="font-size:10.5px;color:var(--muted);line-height:1.7;"></div>
+      </div>
+      <div class="lg-box">
+        <div class="lg-box-title">🏆 Classement local (classe)</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Scores enregistrés sur cet appareil — à utiliser en salle si tout le monde joue sur le même poste.</div>
+        <div id="lgClasseTable" style="font-size:10.5px;line-height:1.8;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="lgLithSheet">
+  <div class="lg-sheet-card">
+    <div class="lg-sheet-title"><span id="lgSheetTitle">Interprétation de la zone</span><button class="cg-close" id="lgSheetCloseBtn">✕</button></div>
+    <div id="lgSheetCoreRef" style="display:none;font-size:10.5px;color:var(--amber);background:var(--panel2);border-radius:6px;padding:7px 9px;margin-bottom:10px;line-height:1.5;"></div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Lithologie</div>
+    <div class="lg-sheet-grid" id="lgSheetGrid"></div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px;">Fluide</div>
+    <div class="lg-chiprow" id="lgSheetFluidRow"></div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px;">Degré de confiance</div>
+    <div class="lg-chiprow" id="lgSheetConfRow"></div>
+  </div>
+</div>
+<div id="lgGlossarySheet">
+  <div class="lg-sheet-card">
+    <div class="lg-sheet-title"><span>📖 Glossaire</span><button class="cg-close" id="lgGlossaryCloseBtn">✕</button></div>
+    <div id="lgGlossaryBody" style="font-size:10.5px;line-height:1.8;color:var(--text);"></div>
+  </div>
+</div>
+<div id="lgRefSheet">
+  <div class="lg-sheet-card" style="max-width:640px;">
+    <div class="lg-sheet-title"><span>📊 Références — à quoi ressemble chaque lithologie et chaque fluide</span><button class="cg-close" id="lgRefCloseBtn">✕</button></div>
+    <div id="lgRefBody" style="color:var(--text);"></div>
+  </div>
+</div>
+<div id="lgCampaignSheet">
+  <div class="lg-sheet-card">
+    <div class="lg-sheet-title"><span>🎯 Mode campagne</span><button class="cg-close" id="lgCampaignCloseBtn">✕</button></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-bottom:10px;line-height:1.5;">6 niveaux de difficulté croissante, débloqués dans l'ordre. Le niveau 6 est un cas fixe (même puits pour toute la classe) utile pour une correction collective.</div>
+    <div id="lgCampaignLevels" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div id="lgCampaignRecapBox" style="display:none;margin-top:14px;border-top:1px solid var(--line);padding-top:12px;">
+      <div style="font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📋 Récap de fin de campagne</div>
+      <div id="lgCampaignRecap" style="font-size:10.5px;line-height:1.7;"></div>
+    </div>
+  </div>
+</div>
+<div id="lgPrintReport"></div>
+
 <script>
 (function(){
   const START_BUDGET = 30, DRILL_COST = 8, TIME_LIMIT = 130;
@@ -8276,6 +8515,1240 @@ function _doStartGame(){
   document.getElementById('swReplayBtn')?.addEventListener('click', swOpen);
   document.getElementById('swPassBtn')?.addEventListener('click', ()=>{ if(budget>=DRILL_COST) resolveSwipe('pass'); });
   document.getElementById('swDrillBtn')?.addEventListener('click', ()=>{ if(budget>=DRILL_COST) resolveSwipe('drill'); });
+})();
+</script>
+
+<script>
+(function(){
+  // ── LABO DIAGRAPHIES & CAROTTES — mini-jeu indépendant ──
+  // Puits synthétique : GR, résistivité, neutron-densité, sonique, calibre + échantillons de carotte.
+  // Le joueur découpe la colonne en zones, identifie la lithologie de chacune, puis conclut sur
+  // l'environnement de dépôt global et le fluide du réservoir principal.
+
+  const LITHOS = {
+    sand_clean:{label:'Grès propre', gr:[8,32], rhobMatrix:2.65, dtMatrix:55.5, pef:1.81, color:'#e8d9a0',
+      coreTxt:'Grès à grain moyen à grossier, bien trié, quartz dominant, stratifications obliques visibles.'},
+    sand_shaly:{label:'Grès argileux', gr:[45,78], rhobMatrix:2.68, dtMatrix:62, pef:2.2, color:'#cdbb84',
+      coreTxt:'Grès fin à matrice argileuse, lits de shale millimétriques intercalés, bioturbation modérée.'},
+    shale:{label:'Shale / Argilite', gr:[92,145], rhobMatrix:2.45, dtMatrix:92, pef:3.4, color:'#6e6a62',
+      coreTxt:'Argilite feuilletée, gris sombre à noir, laminations fines, matière organique visible par endroits.'},
+    limestone:{label:'Calcaire', gr:[5,26], rhobMatrix:2.71, dtMatrix:48, pef:5.08, color:'#cfe3d8',
+      coreTxt:'Calcaire massif à grain fin, bioclastes dispersés, porosité vacuolaire discrète.'},
+    dolomite:{label:'Dolomie', gr:[4,20], rhobMatrix:2.85, dtMatrix:44, pef:3.14, color:'#b9d4c9',
+      coreTxt:'Dolomie cristalline sucroïde, porosité intercristalline nettement visible à l\'œil.'},
+    coal:{label:'Charbon', gr:[18,48], rhobMatrix:1.4, dtMatrix:120, pef:0.20, color:'#2e2b27',
+      coreTxt:'Charbon noir mat à brillant, fracturation en cubes (cleats), très friable.'},
+    salt:{label:'Sel (halite)', gr:[0,7], rhobMatrix:2.03, dtMatrix:67, pef:4.65, color:'#f1ede1',
+      coreTxt:'Halite translucide à blanche, cristaux cubiques visibles, aucune structure sédimentaire.'},
+    conglo:{label:'Conglomérat', gr:[14,38], rhobMatrix:2.6, dtMatrix:52, pef:1.9, color:'#b79a6b',
+      coreTxt:'Galets arrondis cimentés dans une matrice grossière : dépôt à forte énergie de transport.'}
+  };
+  const RES_CANDIDATES = ['sand_clean','sand_shaly','dolomite','limestone']; // lithologies pouvant être réservoir
+  const POROSITY_RANGE = {sand_clean:[0.18,0.28], sand_shaly:[0.08,0.18], dolomite:[0.10,0.20], limestone:[0.05,0.15]};
+  // Résistivité (Ω·m) des lithologies non-réservoir, indépendante du fluide puisqu'elles ne sont jamais
+  // perméables ici : le sel est un isolant quasi parfait, le charbon modérément résistant, le shale
+  // conducteur (argiles + eau liée), le conglomérat variable mais jamais extrême.
+  const NONRES_RESISTIVITY = {shale:[1,5], coal:[20,150], salt:[800,4000], conglo:[8,40]};
+
+  const ENVIRONMENTS = {
+    fluvial:{label:'Fluviatile (chenal)', seq:['conglo','sand_clean','sand_shaly'], motif:'fining',
+      note:'Base érosive nette (contact brutal), granoclassement décroissant vers le haut : courbe GR en cloche inversée typique d\'un chenal fluviatile.'},
+    deltaic:{label:'Deltaïque (front de delta)', seq:['shale','sand_shaly','sand_clean'], motif:'coarsening',
+      note:'Granoclassement croissant vers le haut (coarsening-up), GR qui décroît progressivement : avancée d\'un front deltaïque sur le prodelta.'},
+    turbidite:{label:'Turbiditique (éventail profond)', seq:['shale','sand_clean','shale'], motif:'sharp_both',
+      note:'Base nette par érosion du courant turbide, sommet qui redevient argileux assez vite : séquence de Bouma classique.'},
+    eolian:{label:'Éolien (dune désertique)', seq:['sand_clean','sand_clean'], motif:'clean_blocky',
+      note:'GR bas et remarquablement régulier sur toute l\'épaisseur, tri granulométrique excellent, aucune bioturbation : dune éolienne.'},
+    platform:{label:'Plateforme carbonatée', seq:['limestone','dolomite'], motif:'massive',
+      note:'Carbonate massif très peu argileux, GR bas et stable, porosité souvent secondaire liée à la dolomitisation.'},
+    prodelta:{label:'Marin profond / prodelta', seq:['shale','shale'], motif:'shale_dom',
+      note:'Argile dominante sur toute la colonne, GR élevé et uniforme : sédimentation de décantation loin de toute source détritique grossière.'}
+  };
+
+  // Figures sédimentaires, fossiles et granulométrie typiques par environnement — utilisés pour enrichir
+  // les descriptions de carotte (phase 2), volontairement plus détaillées que la simple lithologie du log.
+  const SED_STRUCTURES = {
+    fluvial: ['stratifications obliques en auge (dune 3D)', 'litage oblique planaire', 'surface d\'érosion basale avec graviers remaniés (lag)', 'rides de courant asymétriques'],
+    deltaic: ['litage oblique de mégarides', 'laminations parallèles à faiblement ondulées', 'slumps synsédimentaires occasionnels', 'figures de charge en semelle de banc'],
+    turbidite: ['base massive à granoclassée normale (Ta)', 'laminations planes-parallèles (Tb)', 'rides de courant grimpantes (Tc, séquence de Bouma)', 'figures de charge et flute casts à la base'],
+    eolian: ['stratifications obliques de grande ampleur (front de dune)', 'grains ronds mats type "millet seed"', 'absence totale de bioturbation ou de structure biogénique'],
+    platform: ['litage noduleux bioturbé', 'terriers de type Thalassinoides', 'figures de dissolution stylolitique', 'laminations algaires (stromatolithes) par endroits'],
+    prodelta: ['laminations fines non perturbées (anoxie de fond)', 'bioturbation diffuse de type Chondrites', 'niveaux de débris coquilliers épars']
+  };
+  const FOSSILS_BY_ENV = {
+    fluvial: ['débris végétaux charbonneux remaniés', 'rares restes de vertébrés continentaux', 'aucun fossile marin (milieu continental)'],
+    deltaic: ['bivalves d\'eau saumâtre', 'traces racinaires à la base des bancs gréseux', 'débris de lignite épars'],
+    turbidite: ['foraminifères planctoniques remaniés depuis la plateforme', 'débris végétaux terrigènes transportés'],
+    eolian: ['aucun fossile (milieu continental aride, trop oxydant)'],
+    platform: ['bioclastes abondants (bivalves, gastéropodes, débris coralliens)', 'foraminifères benthiques en place'],
+    prodelta: ['foraminifères planctoniques en place', 'rares ammonites', 'radiolaires épars']
+  };
+  const GRAIN_SIZE_TXT = {
+    sand_clean:['grain moyen à grossier, très bien trié','grain fin à moyen, bien trié'],
+    sand_shaly:['grain fin, tri modéré, matrice argileuse abondante','grain très fin à fin, mal trié'],
+    shale:['granulométrie argileuse, aucune fraction sableuse visible'],
+    limestone:['texture micritique à grain fin, bioclastes épars'],
+    dolomite:['texture cristalline sucroïde, grain homogène'],
+    coal:['texture ligneuse à charbonneuse, non clastique'],
+    salt:['texture cristalline grossière, non clastique'],
+    conglo:['galets centimétriques à matrice sableuse grossière']
+  };
+
+  const FLUIDS = {
+    water:{label:'Eau', resRange:[1,8],
+      note:'Résistivité basse à modérée malgré la porosité : c\'est de l\'eau de formation, pas d\'hydrocarbures.'},
+    oil:{label:'Huile', resRange:[15,120],
+      note:'Résistivité nettement plus élevée que l\'eau environnante : indice d\'huile. Le croisement neutron-densité reste discret.'},
+    gas:{label:'Gaz', resRange:[60,500],
+      note:'Résistivité très élevée ET net croisement neutron-densité (le neutron sous-estime la porosité en présence de gaz, la densité la surestime) : signature classique du gaz.'},
+    dry:{label:'Sec (pas d\'HC)', resRange:[1,5],
+      note:'Résistivité basse malgré une bonne porosité apparente : réservoir non chargé ou piège inefficace, pas d\'hydrocarbures ici.'}
+  };
+
+  // Motif de hachure par lithologie (angle, épaisseur de trait, période) : un repère qui ne dépend
+  // pas de la couleur, utile en mode daltonien et chaque fois que deux teintes se ressemblent.
+  const LITHO_HATCH = {
+    sand_shaly:{angle:45, stripeW:2, period:6},
+    shale:{angle:90, stripeW:2, period:6},
+    limestone:{angle:0, stripeW:2, period:6},
+    dolomite:{angle:135, stripeW:2, period:6},
+    coal:{angle:45, stripeW:3, period:5},
+    salt:{angle:45, stripeW:1, period:4},
+    conglo:{angle:90, stripeW:4, period:7}
+  };
+  let colorblindMode = (typeof localStorage!=='undefined' && localStorage.getItem('lg_colorblind')==='1');
+  function hatchCss(lith){
+    const h = LITHO_HATCH[lith], color = LITHOS[lith].color;
+    if(!h) return color;
+    return `repeating-linear-gradient(${h.angle}deg, ${color} 0 ${h.period-h.stripeW}px, rgba(0,0,0,.28) ${h.period-h.stripeW}px ${h.period}px)`;
+  }
+  function lithoFillCss(lith){ return (colorblindMode && LITHO_HATCH[lith]) ? hatchCss(lith) : LITHOS[lith].color; }
+  function lithoFillSvg(lith){ return (colorblindMode && LITHO_HATCH[lith]) ? `url(#lgpat-${lith})` : LITHOS[lith].color; }
+  function buildLithoPatternDefs(){
+    return '<defs>' + Object.keys(LITHO_HATCH).map(k=>{
+      const h=LITHO_HATCH[k], color=LITHOS[k].color;
+      return `<pattern id="lgpat-${k}" width="${h.period}" height="${h.period}" patternTransform="rotate(${h.angle})" patternUnits="userSpaceOnUse"><rect width="${h.period}" height="${h.period}" fill="${color}"/><rect width="${h.stripeW}" height="${h.period}" fill="rgba(0,0,0,.28)"/></pattern>`;
+    }).join('') + '</defs>';
+  }
+  const TRACK_COLORS = {
+    normal:{sp:'#8a6d1f', gr:'#2e7d4f', pef:'#b0609a', dt:'#6a4fb0', cali:'#555', resDeep:'#c0392b', resShallow:'#e08a2b', nphi:'#2355c4', rhob:'#c0392b'},
+    cb:    {sp:'#8a6d1f', gr:'#009E73', pef:'#CC79A7', dt:'#0072B2', cali:'#555', resDeep:'#D55E00', resShallow:'#F0E442', nphi:'#0072B2', rhob:'#D55E00'}
+  };
+
+  // Glossaire persistant (indépendant de l'aide-mémoire liée aux courbes) : consultable à tout moment,
+  // y compris après la révélation des carottes.
+  const GLOSSARY = [
+    ['SP','Potentiel spontané. Mesure l\'argilosité/perméabilité par la déflexion par rapport à une ligne de base shale.'],
+    ['GR','Gamma Ray. Radioactivité naturelle de la roche, proxy direct de l\'argilosité.'],
+    ['RES (profonde/peu profonde)','Résistivité électrique. La profonde renseigne sur le fluide, l\'écart avec la peu profonde sur la perméabilité (invasion de boue).'],
+    ['NPHI / RHOB','Neutron et densité. Ensemble, ils donnent la porosité ; leur croisement signale la présence de gaz.'],
+    ['PEF','Facteur photoélectrique. Signature de la lithologie, indépendante de la porosité et du fluide.'],
+    ['DT (sonique)','Temps de parcours acoustique. Augmente avec la porosité, diminue avec la compaction.'],
+    ['CALI','Calibre du trou. Un pic au-dessus du diamètre nominal (washout) rend les autres mesures peu fiables localement.'],
+    ['Washout','Élargissement local du trou (effondrement de paroi), qui dégrade densité, neutron, PEF et SP.'],
+    ['Granoclassement','Évolution de la taille des grains avec la profondeur : décroissant (fining-up) ou croissant (coarsening-up) vers le sommet.'],
+    ['Contact net / érosif','Limite brutale entre deux lithologies, souvent due à l\'érosion par un chenal ou un courant turbide.'],
+    ['Invasion de boue','Pénétration du filtrat de boue dans une formation perméable, à l\'origine de l\'écart résistivité profonde/peu profonde.'],
+    ['Réservoir','Roche poreuse et perméable capable de stocker et laisser circuler des fluides (hydrocarbures ou eau).']
+  ];
+
+  let scenario = null;
+
+  function pick(rng, arr){ return arr[Math.floor(rng()*arr.length)]; }
+  function randRange(rng, lo, hi){ return lo + rng()*(hi-lo); }
+  function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+
+  // Calcule les courbes (diagraphies) pour une colonne de couches déjà entièrement définie
+  // (lith/top/base/phi/isReservoir/fluid/permeable/grTop/grBase). Partagé entre la génération
+  // procédurale (genScenario) et le cas réel figé (buildRealCase) pour garantir la même physique.
+  function computeCurves(layers, washouts, depthTop0, totalDepth, noiseMult){
+    const step = 0.5;
+    const depths = [];
+    for(let d=depthTop0; d<=totalDepth; d+=step) depths.push(d);
+    function layerAt(d){
+      for(const l of layers) if(d>=l.top && d<l.base) return l;
+      return layers[layers.length-1];
+    }
+    function inWashout(d){ return washouts.some(w=>d>=w.top && d<=w.base); }
+
+    const SP_BASELINE = 20; // mV, ligne de base shale (SSP arbitraire)
+    const RMF = 2.3; // Ω·m, résistivité du filtrat de boue (constante pour ce puits)
+    const curves = {gr:[], res:[], resShallow:[], rhob:[], nphi:[], dt:[], cali:[], sp:[], pef:[]};
+    depths.forEach(d=>{
+      const l = layerAt(d);
+      const base = LITHOS[l.lith];
+      const frac = clamp((d-l.top)/Math.max(1,(l.base-l.top)), 0, 1);
+      const grClean = l.grTop + (l.grBase-l.grTop)*frac;
+      const noise = ()=> (Math.random()-0.5)*noiseMult;
+      let gr = grClean + noise()*6;
+      const phi = l.phi;
+      const fluidDensity = l.fluid==='gas' ? 0.25 : l.fluid==='oil' ? 0.82 : 1.05;
+      let rhob = base.rhobMatrix*(1-phi) + fluidDensity*phi + noise()*0.03;
+      // effet gaz : le neutron apparent sous-estime la porosité
+      const nphiTrue = phi * (l.fluid==='gas' ? 0.45 : 1.0);
+      let nphi = nphiTrue + noise()*0.015;
+      let dt = base.dtMatrix + phi*55 + noise()*2.5;
+      // Résistivité des lithologies non-réservoir : tenait jusqu'ici la même plage basse (eau) pour
+      // toutes, ce qui donnait au sel — pourtant l'un des meilleurs isolants électriques naturels —
+      // la même signature qu'un shale conducteur. On distingue maintenant par lithologie.
+      let resLo, resHi;
+      if(l.isReservoir){ resLo = FLUIDS[l.fluid].resRange[0]; resHi = FLUIDS[l.fluid].resRange[1]; }
+      else if(l.permeable){ resLo = FLUIDS.water.resRange[0]; resHi = FLUIDS.water.resRange[1]; }
+      else { const nr = NONRES_RESISTIVITY[l.lith] || [1.5,4]; resLo = nr[0]; resHi = nr[1]; }
+      let res = randRange(Math.random, resLo, resHi) * (1+noise()*0.15);
+      // résistivité shallow (peu profonde) : en zone perméable, la boue envahit la formation et la
+      // lecture peu profonde tire vers Rmf au lieu de Rt ; en zone imperméable (shale, sel...), pas
+      // d'invasion possible, les deux courbes se superposent exactement.
+      let resShallow = l.permeable ? (0.55*RMF + 0.45*res) * (1+noise()*0.12) : res * (1+noise()*0.05);
+      // SP : déflection négative proportionnelle au caractère propre/perméable du lit (via le GR),
+      // nulle en face d'un shale imperméable qui reste sur la ligne de base.
+      const cleanliness = clamp((100-grClean)/100, 0, 1);
+      let sp = SP_BASELINE - (l.permeable ? 95*cleanliness : 0) + noise()*4;
+      // PEF : signature de la lithologie, indépendante de la porosité (contrairement à RHOB/NPHI)
+      let pef = base.pef + noise()*0.12;
+      let cali = 8.5 + noise()*0.15; // diamètre nominal ~8.5 pouces
+      if(inWashout(d)){
+        cali = 8.5 + randRange(Math.random, 3, 7);
+        rhob += (Math.random()-0.5)*0.25*noiseMult; // lecture dégradée, biais fort
+        nphi += (Math.random()-0.5)*0.06*noiseMult;
+        gr += (Math.random()-0.5)*10*noiseMult;
+        pef += (Math.random()-0.5)*1.2*noiseMult; // le PEF (mesure de paroi, pad) est très sensible à l'élargissement
+        sp += (Math.random()-0.5)*15*noiseMult; // mauvais contact d'électrode
+      }
+      curves.gr.push(gr); curves.res.push(Math.max(0.2,res)); curves.resShallow.push(Math.max(0.2,resShallow));
+      curves.rhob.push(rhob); curves.nphi.push(Math.max(0,nphi)); curves.dt.push(dt); curves.cali.push(cali);
+      curves.sp.push(sp); curves.pef.push(Math.max(0.1,pef));
+    });
+    return {depths, curves};
+  }
+
+  // Construit les échantillons de carotte pour une colonne de couches donnée.
+  function buildCoreSamples(layers, envKey){
+    const coreSamples = [];
+    layers.forEach(l=>{
+      const nSamp = (l.base-l.top) > 20 ? 2 : 1;
+      for(let s=0; s<nSamp; s++){
+        const frac = nSamp===1 ? 0.5 : (s===0?0.25:0.75);
+        const d = Math.round(l.top + (l.base-l.top)*frac);
+        const struct = pick(Math.random, SED_STRUCTURES[envKey]);
+        const foss = pick(Math.random, FOSSILS_BY_ENV[envKey]);
+        const grain = pick(Math.random, GRAIN_SIZE_TXT[l.lith] || ['texture indéterminée']);
+        // Pendage apparent (proxy simplifié d'une image de paroi FMI) : disponible seulement une fois
+        // la carotte orientée en main, donc affiché ici plutôt que sur une diagraphie classique.
+        const dipDeg = Math.round(3 + Math.random()*32);
+        const dipDir = pick(Math.random, ['N','NE','E','SE','S','SO','O','NO']);
+        const permTxt = l.isReservoir && (l.fluid==='oil'||l.fluid==='gas')
+          ? (l.tight
+            ? ' Perméabilité à l\'air (plug carotte) : faible malgré la porosité — pores mal connectés, probable nécessité de stimulation pour produire.'
+            : ' Perméabilité à l\'air (plug carotte) : bonne, pores bien connectés — écoulement naturel attendu.')
+          : '';
+        const text = `${LITHOS[l.lith].coreTxt} Granulométrie : ${grain}. Figure sédimentaire : ${struct}. Contenu fossilifère : ${foss}. Pendage apparent des lits : ~${dipDeg}° vers le ${dipDir}.${permTxt}`;
+        coreSamples.push({depth:d, text, lith:l.lith});
+      }
+    });
+    coreSamples.sort((a,b)=>a.depth-b.depth);
+    return coreSamples;
+  }
+
+  // cfg (optionnel) : {forceEnv, nLayerRange:[lo,hi], noiseMult, washoutRange:[min,max], overlapThreshold}
+  // — utilisé par le mode campagne pour faire varier la difficulté sans dupliquer la génération.
+  function genScenario(cfg){
+    cfg = cfg || {};
+    const noiseMult = cfg.noiseMult ?? 1;
+    const overlapThreshold = cfg.overlapThreshold ?? 0.5;
+    const seed = cfg.seed ?? Math.floor(Math.random()*1e9);
+    const rng = makeRng(seed);
+    const envKeys = cfg.envPool || Object.keys(ENVIRONMENTS);
+    const envKey = cfg.forceEnv || pick(rng, envKeys);
+    const env = ENVIRONMENTS[envKey];
+
+    // construit la séquence de couches à partir du motif de l'environnement, avec un peu de variation d'épaisseur
+    const baseSeq = env.seq.slice();
+    const seqLithos = baseSeq.slice();
+    // Sel et charbon ne figurent dans aucune séquence d'environnement de base : sans ceci, ces deux
+    // lithologies restent inatteignables en jeu (vues seulement en Références), ce qui n'a pas de sens
+    // pour des lithologies notées au score. On les insère occasionnellement là où c'est géologiquement
+    // plausible : charbon en milieu fluviatile/deltaïque (tourbière de plaine d'inondation), sel en
+    // contexte de plateforme (sabkha évaporitique).
+    const EXTRA_INSERT = {fluvial:['coal'], deltaic:['coal'], platform:['salt']};
+    function pickInsertLitho(){
+      const extras = EXTRA_INSERT[envKey];
+      if(extras && rng() < 0.3) return pick(rng, extras);
+      return pick(rng, baseSeq);
+    }
+    const targetLen = cfg.nLayerRange ? Math.round(randRange(rng, cfg.nLayerRange[0], cfg.nLayerRange[1])) : null;
+    if(targetLen){
+      while(seqLithos.length < targetLen) seqLithos.splice(1+Math.floor(rng()*(seqLithos.length-1||1)), 0, pickInsertLitho());
+    } else if(seqLithos.length < 4 && rng() < 0.6){
+      seqLithos.splice(1+Math.floor(rng()*(seqLithos.length-1)), 0, pickInsertLitho());
+    }
+
+    const depthTop0 = Math.round(randRange(rng, 1800, 2600));
+    let curDepth = depthTop0;
+    const layers = [];
+    seqLithos.forEach((lk, i)=>{
+      const thick = Math.round(randRange(rng, 12, 38));
+      layers.push({lith:lk, top:curDepth, base:curDepth+thick, grTrend:null});
+      curDepth += thick;
+    });
+    const totalDepth = curDepth;
+
+    // choisit la couche réservoir (candidate lithologique) et son fluide
+    const candIdx = layers.map((l,i)=>i).filter(i=>RES_CANDIDATES.includes(layers[i].lith));
+    let resIdx = -1, fluidKey = 'dry';
+    if(candIdx.length && rng() < 0.85){
+      resIdx = pick(rng, candIdx);
+      fluidKey = pick(rng, ['water','oil','gas','dry']);
+    }
+
+    // porosité par couche (0 si non candidate)
+    layers.forEach((l,i)=>{
+      if(RES_CANDIDATES.includes(l.lith)){
+        const [lo,hi] = POROSITY_RANGE[l.lith];
+        l.phi = randRange(rng, lo, hi);
+      } else l.phi = 0.02;
+      l.isReservoir = (i===resIdx);
+      l.fluid = l.isReservoir ? fluidKey : 'water';
+      l.permeable = RES_CANDIDATES.includes(l.lith); // toute couche de ce type laisse entrer la boue (invasion), pas seulement la couche-réservoir choisie
+      // Perméabilité réelle (vs porosité) : une roche peut être poreuse mais mal connectée (ciment,
+      // matrice argileuse) — rien dans les diagraphies classiques ne la montre directement, seule la
+      // carotte (texture/grain) en donne un indice. D'où la décision de fracturation plus bas : un
+      // vrai choix d'ingénieur, pas une simple lecture de courbe.
+      l.tight = l.isReservoir && (l.fluid==='oil' || l.fluid==='gas') && rng() < 0.4;
+    });
+
+    // tendance GR intra-couche selon le motif (coarsening/fining = gradient linéaire ; sinon plat)
+    layers.forEach((l,i)=>{
+      const base = LITHOS[l.lith];
+      let g0 = randRange(rng, base.gr[0], base.gr[1]);
+      let g1 = g0;
+      if(env.motif==='coarsening' && i===layers.length-1) g1 = base.gr[0]; // décroît vers le haut (fin de colonne = sommet = moins profond)
+      if(env.motif==='fining' && i===0) g1 = base.gr[1];
+      l.grTop = g0; l.grBase = g1; // "top"=sommet de couche en profondeur max, on interpole simplement
+    });
+
+    // zones d'élargissement (washout)
+    const washouts = [];
+    const [wLo,wHi] = cfg.washoutRange || [1,2];
+    const nWash = wLo + Math.floor(rng()*(wHi-wLo+1));
+    for(let w=0; w<nWash; w++){
+      const wTop = Math.round(randRange(rng, depthTop0+10, totalDepth-20));
+      const wLen = Math.round(randRange(rng, 4, 11));
+      washouts.push({top:wTop, base:wTop+wLen});
+    }
+
+    const {depths, curves} = computeCurves(layers, washouts, depthTop0, totalDepth, noiseMult);
+    const coreSamples = buildCoreSamples(layers, envKey);
+
+    return {depthTop0, totalDepth, layers, washouts, depths, curves, envKey, env, resIdx, fluidKey, coreSamples, overlapThreshold};
+  }
+
+  function fmtDepth(d){ return d.toFixed(0)+'m'; }
+
+  function renderLogSvg(){
+    const sc = scenario;
+    const W = 670, marginTop=20, marginBot=20, pxPerM = 4.2;
+    const H = Math.round((sc.totalDepth-sc.depthTop0)*pxPerM) + marginTop + marginBot;
+    const svg = document.getElementById('lgSvg');
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const y = d => marginTop + (d-sc.depthTop0)*pxPerM;
+
+    const TC = colorblindMode ? TRACK_COLORS.cb : TRACK_COLORS.normal;
+    const tracks = [
+      {key:'sp', x:80, w:60, lo:-90, hi:40, label:'SP (mV)', color:TC.sp},
+      {key:'gr', x:150, w:80, lo:0, hi:150, label:'GR (API)', color:TC.gr},
+      {key:'res', x:240, w:95, lo:0.2, hi:2000, label:'RES shal./prof.', log:true},
+      {key:'nphi_rhob', x:345, w:95, label:'NPHI / RHOB'},
+      {key:'pef', x:450, w:55, lo:0, hi:6, label:'PEF (b/e)', color:TC.pef},
+      {key:'dt', x:515, w:65, lo:40, hi:140, label:'DT (µs/ft)', color:TC.dt},
+      {key:'cali', x:590, w:55, lo:6, hi:16, label:'CALI (in)', color:TC.cali}
+    ];
+    const caliTrack = tracks.find(t=>t.key==='cali');
+
+    let svgParts = [];
+    svgParts.push(buildLithoPatternDefs());
+    svgParts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="none"/>`);
+
+    // graduation de profondeur
+    for(let d=sc.depthTop0; d<=sc.totalDepth; d+= (sc.totalDepth-sc.depthTop0)>120?20:10){
+      svgParts.push(`<text x="4" y="${y(d)+3}" font-size="9" fill="var(--muted)" font-family="monospace">${fmtDepth(d)}</text>`);
+      svgParts.push(`<line x1="40" y1="${y(d)}" x2="${W}" y2="${y(d)}" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>`);
+    }
+
+    // bande lithologique à gauche des tracks (x=40-68) : reflète l'INTERPRÉTATION du joueur,
+    // pas la réponse vraie — sinon la couleur révèlerait la lithologie avant même de jouer.
+    const bounds = zoneBoundaries();
+    for(let i=0;i<bounds.length-1;i++){
+      const zt=bounds[i], zb=bounds[i+1], lith=zoneLiths[i];
+      const fill = lith ? lithoFillSvg(lith) : 'var(--panel2)';
+      svgParts.push(`<rect x="40" y="${y(zt)}" width="28" height="${Math.max(1,y(zb)-y(zt))}" fill="${fill}" stroke="var(--line)" stroke-width="0.4" data-zone-idx="${i}" class="lg-zone-band"/>`);
+    }
+    // poignées de limite de zone (glisser pour ajuster la profondeur)
+    svgParts.push(`<line x1="74" y1="${marginTop}" x2="74" y2="${H-marginBot}" stroke="var(--line)" stroke-width="0.6"/>`);
+    dividers.forEach((d,i)=>{
+      svgParts.push(`<line class="lg-divider-line" data-handle-idx="${i}" x1="40" y1="${y(d)}" x2="${W}" y2="${y(d)}" stroke="var(--amber)" stroke-width="1" stroke-dasharray="3,2" opacity="0.85"/>`);
+      // zone de prise tactile large et invisible, + poignée visible plus petite par-dessus
+      svgParts.push(`<circle class="lg-handle" data-handle-idx="${i}" cx="74" cy="${y(d)}" r="16" fill="transparent" stroke="none"/>`);
+      svgParts.push(`<circle class="lg-handle-dot" data-handle-idx="${i}" cx="74" cy="${y(d)}" r="9" fill="var(--amber)" stroke="var(--bg)" stroke-width="2" pointer-events="none"/>`);
+    });
+
+    // washouts (bande grise derrière tout, zone CALI)
+    sc.washouts.forEach(w=>{
+      svgParts.push(`<rect x="${caliTrack.x}" y="${y(w.top)}" width="${caliTrack.w}" height="${Math.max(1,y(w.base)-y(w.top))}" fill="#d9534f" opacity="0.15"/>`);
+    });
+
+    // tracés des courbes
+    function curveToPoints(key, trackX, trackW, lo, hi, log){
+      return sc.depths.map((d,i)=>{
+        const v = sc.curves[key][i];
+        let frac;
+        if(log){ frac = (Math.log10(v)-Math.log10(lo))/(Math.log10(hi)-Math.log10(lo)); }
+        else { frac = (v-lo)/(hi-lo); }
+        frac = clamp(frac,0,1);
+        return `${trackX+frac*trackW},${y(d).toFixed(1)}`;
+      }).join(' ');
+    }
+
+    tracks.forEach(t=>{
+      svgParts.push(`<rect x="${t.x}" y="${marginTop}" width="${t.w}" height="${H-marginTop-marginBot}" fill="none" stroke="var(--line)" stroke-width="0.6"/>`);
+      svgParts.push(`<text x="${t.x}" y="12" font-size="9" fill="var(--muted)" font-family="monospace">${t.label}</text>`);
+      // Échelle numérique (bornes lo/hi) sous le nom de piste, comme sur un vrai log : sans elles,
+      // la position d'une courbe dans sa piste ne veut rien dire pour qui ne connaît pas déjà les
+      // bornes par cœur.
+      if(t.key!=='nphi_rhob' && t.key!=='res'){
+        svgParts.push(`<text x="${t.x}" y="21" font-size="7" fill="var(--muted)" font-family="monospace">${t.lo}</text>`);
+        svgParts.push(`<text x="${t.x+t.w}" y="21" font-size="7" fill="var(--muted)" font-family="monospace" text-anchor="end">${t.hi}</text>`);
+      }
+      if(t.key==='nphi_rhob'){
+        svgParts.push(`<text x="${t.x}" y="21" font-size="7" fill="${TC.nphi}" font-family="monospace">45%</text>`);
+        svgParts.push(`<text x="${t.x+t.w}" y="21" font-size="7" fill="${TC.nphi}" font-family="monospace" text-anchor="end">0%</text>`);
+        // NPHI : 0-45% (frac direct, échelle "inversée" = porosité croît vers la gauche comme en vrai)
+        const nphiFracs = sc.depths.map((d,i)=>{
+          const v = clamp(sc.curves.nphi[i],0,0.45);
+          return 1-(v/0.45);
+        });
+        // RHOB : 1.95-2.95 g/cc, convertie sur la même échelle "porosité apparente" que NPHI (plus la
+        // roche est dense, moins poreuse elle paraît) pour que les deux courbes se superposent
+        // quand le gaz n'intervient pas.
+        const rhobFracs = sc.depths.map((d,i)=>{
+          const v = clamp(sc.curves.rhob[i],1.95,2.95);
+          return (v-1.95)/(2.95-1.95);
+        });
+        const nphiPts = sc.depths.map((d,i)=>`${t.x+nphiFracs[i]*t.w},${y(d).toFixed(1)}`).join(' ');
+        const rhobPts = sc.depths.map((d,i)=>`${t.x+rhobFracs[i]*t.w},${y(d).toFixed(1)}`).join(' ');
+        // Effet gaz : zones où NPHI (porosité sous-estimée) se retrouve à droite de RHOB (porosité
+        // surestimée par la faible densité du gaz) — le "croisement" classique. On le remplit en
+        // ambre comme sur un log réel, bien plus lisible qu'un simple croisement de deux traits fins.
+        // Le modèle ne simule PAS l'effet argile du neutron (toute lithologie non-réservoir a une
+        // phi plancher de 0.02 avec une rhobMatrix propre, ce qui crée un écart géométrique NPHI/RHOB
+        // même sans gaz) : se fier à la seule forme des courbes shaderait aussi le shale. On ne
+        // colorie donc que là où la couche réelle contient effectivement du gaz.
+        function gasLayerAt(d){
+          const l = sc.layers.find(l=>d>=l.top && d<l.base) || sc.layers[sc.layers.length-1];
+          return l.isReservoir && l.fluid==='gas';
+        }
+        let runStart = -1;
+        for(let i=0;i<=sc.depths.length;i++){
+          const crossed = i<sc.depths.length && nphiFracs[i]>rhobFracs[i] && gasLayerAt(sc.depths[i]);
+          if(crossed && runStart===-1) runStart = i;
+          if(!crossed && runStart!==-1){
+            const runEnd = i-1;
+            if(runEnd>runStart){
+              const top = sc.depths.slice(runStart,runEnd+1).map((d,k)=>`${t.x+nphiFracs[runStart+k]*t.w},${y(d).toFixed(1)}`);
+              const bot = sc.depths.slice(runStart,runEnd+1).map((d,k)=>`${t.x+rhobFracs[runStart+k]*t.w},${y(d).toFixed(1)}`).reverse();
+              svgParts.push(`<polygon points="${top.join(' ')} ${bot.join(' ')}" fill="var(--amber)" opacity="0.3"/>`);
+            }
+            runStart = -1;
+          }
+        }
+        svgParts.push(`<polyline points="${nphiPts}" fill="none" stroke="${TC.nphi}" stroke-width="1.1"/>`);
+        svgParts.push(`<polyline points="${rhobPts}" fill="none" stroke="${TC.rhob}" stroke-width="1.1" stroke-dasharray="2,1.5"/>`);
+        svgParts.push(`<text x="${t.x}" y="${H-6}" font-size="8" fill="${TC.nphi}" font-family="monospace">NPHI</text>`);
+        svgParts.push(`<text x="${t.x+40}" y="${H-6}" font-size="8" fill="${TC.rhob}" font-family="monospace">RHOB (tirets)</text>`);
+      } else if(t.key==='res'){
+        // résistivité profonde (trait plein) et peu profonde (pointillé) superposées :
+        // leur écart marque l'invasion de boue, donc la perméabilité, indépendamment du fluide.
+        const deepPts = curveToPoints('res', t.x, t.w, t.lo, t.hi, true);
+        const shalPts = curveToPoints('resShallow', t.x, t.w, t.lo, t.hi, true);
+        // Repères de décade (1, 10, 100, 1000 Ω·m) : une échelle log sans ses graduations internes
+        // ne se lit pas — impossible de situer une valeur entre les deux bornes de la piste.
+        for(let dec=1; dec<=1000; dec*=10){
+          if(dec<=t.lo || dec>=t.hi) continue;
+          const frac = (Math.log10(dec)-Math.log10(t.lo))/(Math.log10(t.hi)-Math.log10(t.lo));
+          const gx = t.x+frac*t.w;
+          svgParts.push(`<line x1="${gx}" y1="${marginTop}" x2="${gx}" y2="${H-marginBot}" stroke="var(--line)" stroke-width="0.4" stroke-dasharray="1,2" opacity="0.6"/>`);
+          svgParts.push(`<text x="${gx}" y="21" font-size="7" fill="var(--muted)" font-family="monospace" text-anchor="middle">${dec}</text>`);
+        }
+        svgParts.push(`<text x="${t.x}" y="21" font-size="7" fill="var(--muted)" font-family="monospace">${t.lo}</text>`);
+        svgParts.push(`<text x="${t.x+t.w}" y="21" font-size="7" fill="var(--muted)" font-family="monospace" text-anchor="end">${t.hi}</text>`);
+        svgParts.push(`<polyline points="${shalPts}" fill="none" stroke="${TC.resShallow}" stroke-width="1" stroke-dasharray="2,1.5"/>`);
+        svgParts.push(`<polyline points="${deepPts}" fill="none" stroke="${TC.resDeep}" stroke-width="1.2"/>`);
+        svgParts.push(`<text x="${t.x}" y="${H-6}" font-size="8" fill="${TC.resDeep}" font-family="monospace">profonde</text>`);
+        svgParts.push(`<text x="${t.x+48}" y="${H-6}" font-size="8" fill="${TC.resShallow}" font-family="monospace">peu prof.</text>`);
+      } else {
+        const pts = curveToPoints(t.key, t.x, t.w, t.lo, t.hi, t.log);
+        svgParts.push(`<polyline points="${pts}" fill="none" stroke="${t.color}" stroke-width="1.1"/>`);
+        if(t.key==='cali'){
+          const nomX = t.x + ((8.5-t.lo)/(t.hi-t.lo))*t.w;
+          svgParts.push(`<line x1="${nomX}" y1="${marginTop}" x2="${nomX}" y2="${H-marginBot}" stroke="var(--muted)" stroke-width="0.6" stroke-dasharray="3,2"/>`);
+        }
+      }
+    });
+
+    // marqueurs de carotte (losange à côté de la colonne lithologique)
+    sc.coreSamples.forEach(cs=>{
+      svgParts.push(`<text x="2" y="${y(cs.depth)+3}" font-size="11">🪨</text>`);
+    });
+
+    svg.innerHTML = svgParts.join('');
+
+    // interaction tooltip au survol
+    svg.onmousemove = (ev)=>{
+      const rect = svg.getBoundingClientRect();
+      const scaleY = rect.height / H;
+      const my = (ev.clientY - rect.top)/scaleY;
+      const d = sc.depthTop0 + (my-marginTop)/pxPerM;
+      if(d<sc.depthTop0 || d>sc.totalDepth) { document.getElementById('lgTip').style.display='none'; return; }
+      const idx = Math.max(0, Math.min(sc.depths.length-1, Math.round((d-sc.depthTop0)/0.5)));
+      const tip = document.getElementById('lgTip');
+      tip.innerHTML = `<b>${fmtDepth(sc.depths[idx])}</b><br>SP ${sc.curves.sp[idx].toFixed(0)}mV · GR ${sc.curves.gr[idx].toFixed(0)} API<br>RES prof. ${sc.curves.res[idx].toFixed(1)} · peu prof. ${sc.curves.resShallow[idx].toFixed(1)} Ω·m<br>RHOB ${sc.curves.rhob[idx].toFixed(2)} · NPHI ${(sc.curves.nphi[idx]*100).toFixed(0)}% · PEF ${sc.curves.pef[idx].toFixed(1)}<br>DT ${sc.curves.dt[idx].toFixed(0)} · CALI ${sc.curves.cali[idx].toFixed(1)}"`;
+      tip.style.display='block';
+      tip.style.left = Math.min(ev.clientX-svg.getBoundingClientRect().left+14, W-170)+'px';
+      tip.style.top = (my-10)+'px';
+    };
+    svg.onmouseleave = ()=>{ document.getElementById('lgTip').style.display='none'; };
+
+    // glisser une poignée pour déplacer une limite de zone (souris + tactile via Pointer Events)
+    function depthFromClientY(clientY){
+      const rect = svg.getBoundingClientRect();
+      const scaleY = rect.height / H;
+      const my = (clientY - rect.top)/scaleY;
+      return clamp(sc.depthTop0 + (my-marginTop)/pxPerM, sc.depthTop0, sc.totalDepth);
+    }
+    const dividerLines = {};
+    svg.querySelectorAll('.lg-divider-line').forEach(l=> dividerLines[l.dataset.handleIdx]=l);
+    const handleDots = {};
+    svg.querySelectorAll('.lg-handle-dot').forEach(d=> handleDots[d.dataset.handleIdx]=d);
+    const zoneBands = {};
+    svg.querySelectorAll('.lg-zone-band').forEach(b=> zoneBands[b.dataset.zoneIdx]=b);
+    function liveUpdateDivider(idx, depth){
+      const yy = y(depth);
+      if(dividerLines[idx]){ dividerLines[idx].setAttribute('y1', yy); dividerLines[idx].setAttribute('y2', yy); }
+      if(handleDots[idx]){ handleDots[idx].setAttribute('cy', yy); }
+      // les deux bandes lithologiques de part et d'autre de cette limite doivent suivre en direct
+      const above = zoneBands[idx], below = zoneBands[idx+1];
+      const bTop = idx===0 ? sc.depthTop0 : dividers[idx-1];
+      const bBot = idx===dividers.length-1 ? sc.totalDepth : dividers[idx+1];
+      if(above){ above.setAttribute('height', Math.max(1, yy - y(bTop))); }
+      if(below){ below.setAttribute('y', yy); below.setAttribute('height', Math.max(1, y(bBot) - yy)); }
+      const tip = document.getElementById('lgTip');
+      tip.innerHTML = `<b>${fmtDepth(depth)}</b>`;
+      tip.style.display = 'block';
+      tip.style.left = '78px';
+      tip.style.top = (yy-10)+'px';
+    }
+    svg.querySelectorAll('.lg-handle').forEach(handle=>{
+      const idx = parseInt(handle.dataset.handleIdx, 10);
+      let dragging = false;
+      handle.addEventListener('pointerdown', ev=>{
+        dragging = true;
+        handle.setPointerCapture(ev.pointerId);
+        ev.preventDefault();
+      });
+      handle.addEventListener('pointermove', ev=>{
+        if(!dragging) return;
+        ev.preventDefault();
+        const lo = (idx===0 ? sc.depthTop0 : dividers[idx-1]) + 1;
+        const hi = (idx===dividers.length-1 ? sc.totalDepth : dividers[idx+1]) - 1;
+        dividers[idx] = clamp(Math.round(depthFromClientY(ev.clientY)), Math.floor(lo), Math.ceil(hi));
+        liveUpdateDivider(idx, dividers[idx]);
+      });
+      handle.addEventListener('pointerup', ev=>{
+        dragging=false;
+        document.getElementById('lgTip').style.display='none';
+        sndClick();
+        renderLogSvg();
+        renderZonePanel();
+      });
+      handle.addEventListener('pointercancel', ()=>{ dragging=false; });
+    });
+    // taper une bande lithologique ouvre le sélecteur de lithologie de cette zone
+    svg.querySelectorAll('.lg-zone-band').forEach(band=>{
+      band.addEventListener('click', ()=> openLithSheet(parseInt(band.dataset.zoneIdx,10)));
+    });
+  }
+
+  function renderCoreList(){
+    const box = document.getElementById('lgCoreList');
+    box.innerHTML = scenario.coreSamples.map(cs=>
+      `<div class="lg-core-sample"><span class="lg-core-depth">${fmtDepth(cs.depth)}</span> — ${cs.text}</div>`
+    ).join('') || '<div style="font-size:11px;color:var(--muted);">Aucun échantillon disponible.</div>';
+  }
+
+  // --- Modèle tactile : des limites (dividers) découpent le puits en zones contiguës.
+  // Chaque zone se voit assigner une lithologie, un fluide et un degré de confiance en tapant sa
+  // bande sur le log (bottom-sheet), plus rapide et plus "chill" sur téléphone qu'une grille à taper.
+  let dividers = [];     // profondeurs des limites internes, triées
+  let zoneLiths = [];    // lithologie (ou null) par zone
+  let zoneFluids = [];   // fluide (ou null) par zone — clé FLUIDS ou 'none'
+  let zoneConf = [];     // 'sur' | 'incertain' | null par zone
+  let pickedEnv = '';
+  let pickedAction = null;      // 'abandon' | 'produce' | null
+  let pickedProdZoneIdx = null; // index dans zoneLiths de la zone choisie pour la production
+  let pickedMethod = null;      // 'natural' | 'acid' | 'frack' | null
+  const CARBONATE_LITHS = ['limestone','dolomite']; // l'acide dissout les carbonates, pas le quartz
+  let hintTokens = 3;
+  let lastFinalScore = null;
+
+  function zoneBoundaries(){
+    return [scenario.depthTop0, ...dividers, scenario.totalDepth];
+  }
+  function initZones(){
+    const top = scenario.depthTop0, bot = scenario.totalDepth, n = 4;
+    dividers = [];
+    for(let i=1;i<n;i++) dividers.push(Math.round(top + (bot-top)*i/n));
+    zoneLiths = new Array(n).fill(null);
+    zoneFluids = new Array(n).fill(null);
+    zoneConf = new Array(n).fill(null);
+  }
+  function addDivider(){
+    const b = zoneBoundaries();
+    let bestI=0, bestLen=-1;
+    for(let i=0;i<b.length-1;i++){ const len=b[i+1]-b[i]; if(len>bestLen){ bestLen=len; bestI=i; } }
+    if(bestLen < 4) return;
+    const newD = Math.round((b[bestI]+b[bestI+1])/2);
+    let insertAt = dividers.findIndex(d=>d>newD);
+    if(insertAt===-1) insertAt = dividers.length;
+    dividers.splice(insertAt, 0, newD);
+    zoneLiths.splice(insertAt+1, 0, zoneLiths[insertAt] ?? null);
+    zoneFluids.splice(insertAt+1, 0, zoneFluids[insertAt] ?? null);
+    zoneConf.splice(insertAt+1, 0, zoneConf[insertAt] ?? null);
+    renderLogSvg();
+    renderZonePanel();
+  }
+  function removeDivider(zoneIdx){
+    if(zoneLiths.length<=1) return;
+    const cut = zoneIdx < dividers.length ? zoneIdx : zoneIdx-1;
+    const drop = zoneIdx < dividers.length ? zoneIdx+1 : zoneIdx-1;
+    dividers.splice(cut,1);
+    zoneLiths.splice(drop,1);
+    zoneFluids.splice(drop,1);
+    zoneConf.splice(drop,1);
+    renderLogSvg();
+    renderZonePanel();
+  }
+  function renderZonePanel(){
+    const box = document.getElementById('lgZoneList');
+    const b = zoneBoundaries();
+    box.innerHTML = zoneLiths.map((lith,i)=>{
+      const swatch = lith ? lithoFillCss(lith) : 'var(--bg)';
+      const label = lith ? LITHOS[lith].label : 'Toucher pour interpréter';
+      const fluid = zoneFluids[i];
+      const fluidTxt = fluid ? (fluid==='none' ? 'non réserv.' : FLUIDS[fluid].label) : '';
+      const confIcon = zoneConf[i]==='incertain' ? '❓' : zoneConf[i]==='sur' ? '✓' : '';
+      return `<div class="lg-zone-card" data-zone-idx="${i}">
+        <div class="lg-zone-swatch" style="background:${swatch};"></div>
+        <div class="lg-zone-depth">${fmtDepth(b[i])}–${fmtDepth(b[i+1])}</div>
+        <div class="lg-zone-lith-label ${lith?'':'unset'}">${label}${fluidTxt?' · '+fluidTxt:''}</div>
+        <span style="font-size:12px;" title="confiance">${confIcon}</span>
+        ${zoneLiths.length>1 ? `<button class="lg-zone-del" data-del-idx="${i}">🗑</button>` : ''}
+      </div>`;
+    }).join('');
+    box.querySelectorAll('.lg-zone-card').forEach(card=>{
+      card.addEventListener('click', ev=>{
+        if(ev.target.closest('[data-del-idx]')) return;
+        openZoneSheet(parseInt(card.dataset.zoneIdx,10));
+      });
+    });
+    box.querySelectorAll('[data-del-idx]').forEach(btn=>{
+      btn.addEventListener('click', ev=>{
+        ev.stopPropagation();
+        removeDivider(parseInt(btn.dataset.delIdx,10));
+      });
+    });
+    if(gamePhase===2) renderProdZoneChips();
+  }
+  function openZoneSheet(zoneIdx){
+    const sheet = document.getElementById('lgLithSheet');
+    const b = zoneBoundaries();
+    document.getElementById('lgSheetTitle').textContent = `Zone ${fmtDepth(b[zoneIdx])}–${fmtDepth(b[zoneIdx+1])}`;
+
+    const coreRef = document.getElementById('lgSheetCoreRef');
+    const matches = gamePhase===2 ? scenario.coreSamples.filter(cs=>cs.depth>=b[zoneIdx] && cs.depth<=b[zoneIdx+1]) : [];
+    if(matches.length){ coreRef.style.display='block'; coreRef.innerHTML = '🪨 ' + matches.map(cs=>`<b>${fmtDepth(cs.depth)}</b> — ${cs.text}`).join('<br>'); }
+    else coreRef.style.display='none';
+
+    const grid = document.getElementById('lgSheetGrid');
+    grid.innerHTML = Object.keys(LITHOS).map(k=>`
+      <div class="lg-sheet-tile" data-lith="${k}" style="${zoneLiths[zoneIdx]===k?'border-color:var(--amber);':''}">
+        <div class="lg-sheet-swatch" style="background:${lithoFillCss(k)};"></div>
+        <span>${LITHOS[k].label}</span>
+      </div>`).join('');
+    grid.querySelectorAll('[data-lith]').forEach(tile=>{
+      tile.addEventListener('click', ()=>{
+        zoneLiths[zoneIdx] = tile.dataset.lith;
+        sndPick();
+        renderLogSvg(); renderZonePanel();
+        openZoneSheet(zoneIdx);
+      });
+    });
+
+    const fluidRow = document.getElementById('lgSheetFluidRow');
+    const fluidKeys = [...Object.keys(FLUIDS), 'none'];
+    fluidRow.innerHTML = fluidKeys.map(k=>
+      `<button class="lg-chip ${zoneFluids[zoneIdx]===k?'active':''}" data-fluid="${k}">${k==='none'?'Non réservoir':FLUIDS[k].label}</button>`).join('');
+    fluidRow.querySelectorAll('[data-fluid]').forEach(chip=>{
+      chip.addEventListener('click', ()=>{ zoneFluids[zoneIdx] = chip.dataset.fluid; sndClick(); renderZonePanel(); openZoneSheet(zoneIdx); });
+    });
+
+    const confRow = document.getElementById('lgSheetConfRow');
+    confRow.innerHTML = ['sur','incertain'].map(k=>
+      `<button class="lg-chip ${zoneConf[zoneIdx]===k?'active':''}" data-conf="${k}">${k==='sur'?'Sûr(e)':'Incertain(e)'}</button>`).join('');
+    confRow.querySelectorAll('[data-conf]').forEach(chip=>{
+      chip.addEventListener('click', ()=>{ zoneConf[zoneIdx] = chip.dataset.conf; sndClick(); renderZonePanel(); openZoneSheet(zoneIdx); });
+    });
+
+    sheet.classList.add('open');
+  }
+  function renderEnvChips(){
+    const envBox = document.getElementById('lgEnvChips');
+    envBox.innerHTML = Object.keys(ENVIRONMENTS).map(k=>
+      `<button class="lg-chip ${pickedEnv===k?'active':''}" data-env="${k}">${ENVIRONMENTS[k].label}</button>`).join('');
+    envBox.querySelectorAll('[data-env]').forEach(chip=>{
+      chip.addEventListener('click', ()=>{ pickedEnv = chip.dataset.env; renderEnvChips(); });
+    });
+  }
+  function renderProdZoneChips(){
+    const actionBox = document.getElementById('lgActionChips');
+    if(!actionBox) return;
+    actionBox.querySelectorAll('[data-action]').forEach(chip=>{
+      chip.classList.toggle('active', pickedAction===chip.dataset.action);
+    });
+    document.getElementById('lgProduceDetail').style.display = pickedAction==='produce' ? 'block' : 'none';
+
+    const box = document.getElementById('lgProdZoneChips');
+    const b = zoneBoundaries();
+    box.innerHTML = zoneLiths.map((lith,i)=>{
+      if(!lith) return '';
+      const fluidTxt = zoneFluids[i] ? (zoneFluids[i]==='none' ? 'non réserv.' : FLUIDS[zoneFluids[i]].label) : 'fluide non précisé';
+      return `<button class="lg-chip ${pickedProdZoneIdx===i?'active':''}" data-zone="${i}">${fmtDepth(b[i])}–${fmtDepth(b[i+1])} (${fluidTxt})</button>`;
+    }).join('');
+    box.querySelectorAll('[data-zone]').forEach(chip=>{
+      chip.addEventListener('click', ()=>{ pickedProdZoneIdx = parseInt(chip.dataset.zone,10); sndClick(); renderProdZoneChips(); });
+    });
+    document.getElementById('lgMethodChips').querySelectorAll('[data-method]').forEach(chip=>{
+      chip.classList.toggle('active', pickedMethod===chip.dataset.method);
+    });
+  }
+  document.getElementById('lgActionChips')?.querySelectorAll('[data-action]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{ pickedAction = chip.dataset.action; sndClick(); renderProdZoneChips(); });
+  });
+  document.getElementById('lgMethodChips')?.querySelectorAll('[data-method]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{ pickedMethod = chip.dataset.method; sndClick(); renderProdZoneChips(); });
+  });
+  function renderGlossary(){
+    document.getElementById('lgGlossaryBody').innerHTML = GLOSSARY.map(([t,d])=>
+      `<div style="margin-bottom:8px;"><b style="color:var(--amber);">${t}</b><br>${d}</div>`).join('');
+  }
+
+  // --- Onglet Références : à quoi ressemble chaque lithologie et chaque fluide, positionné sur les
+  // MÊMES échelles que les pistes du log réel, pour que la lecture du log s'appuie sur un repère vu
+  // avant de jouer plutôt que sur une mémorisation abstraite de chiffres.
+  function miniRangeBar(lo, hi, scaleLo, scaleHi, color, logScale){
+    const W=140, H=12;
+    const toX = v => {
+      const cv = clamp(v, scaleLo, scaleHi);
+      return logScale
+        ? ((Math.log10(cv)-Math.log10(scaleLo))/(Math.log10(scaleHi)-Math.log10(scaleLo)))*W
+        : ((cv-scaleLo)/(scaleHi-scaleLo))*W;
+    };
+    const x1 = toX(lo), x2 = toX(hi);
+    return `<svg width="${W}" height="${H}" style="vertical-align:middle;"><rect x="0" y="4" width="${W}" height="4" fill="var(--line)" opacity="0.4" rx="2"/><rect x="${x1}" y="1" width="${Math.max(3,x2-x1)}" height="10" fill="${color}" rx="2"/></svg>`;
+  }
+  function renderReferences(){
+    const TC = colorblindMode ? TRACK_COLORS.cb : TRACK_COLORS.normal;
+    let html = `<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5;">Repères approximatifs : chaque lithologie varie un peu d'un scénario à l'autre, mais se situe toujours autour de ces plages. Les barres sont positionnées sur les mêmes échelles que les pistes du log (GR 0-150 API, PEF 0-6 b/e, RHOB 1,95-2,95 g/cc).</div>`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--muted);text-align:left;"><th>Lithologie</th><th>GR</th><th>PEF</th><th>RHOB</th></tr>`;
+    Object.keys(LITHOS).forEach(k=>{
+      const L = LITHOS[k];
+      html += `<tr style="border-top:1px solid var(--line);">
+        <td style="padding:6px 4px;white-space:nowrap;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${lithoFillCss(k)};margin-right:5px;vertical-align:middle;"></span>${L.label}</td>
+        <td style="padding:6px 4px;">${miniRangeBar(L.gr[0],L.gr[1],0,150,TC.gr)}</td>
+        <td style="padding:6px 4px;">${miniRangeBar(L.pef-0.15,L.pef+0.15,0,6,TC.pef)}</td>
+        <td style="padding:6px 4px;">${miniRangeBar(L.rhobMatrix-0.03,L.rhobMatrix+0.03,1.95,2.95,TC.rhob)}</td>
+      </tr>`;
+    });
+    html += `</table>`;
+    html += `<div style="font-size:10px;color:var(--muted);margin:16px 0 6px;">Fluides — résistivité profonde (échelle logarithmique 0,2 à 2000 Ω·m, même échelle que la piste RES) :</div>`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:10.5px;">`;
+    Object.keys(FLUIDS).forEach(k=>{
+      const F = FLUIDS[k];
+      html += `<tr style="border-top:1px solid var(--line);"><td style="padding:6px 4px;width:90px;">${F.label}</td><td style="padding:6px 4px;">${miniRangeBar(F.resRange[0],F.resRange[1],0.2,2000,TC.resDeep,true)}</td></tr>`;
+    });
+    html += `</table>`;
+    html += `<div style="font-size:10.5px;color:var(--text);margin-top:12px;line-height:1.6;">💡 Pour le gaz, en plus d'une résistivité élevée, le neutron sous-estime nettement la porosité par rapport à la densité (croisement net sur la piste NPHI/RHOB) — ce n'est pas le cas pour l'huile, dont le croisement reste discret.</div>`;
+    document.getElementById('lgRefBody').innerHTML = html;
+  }
+
+  // --- Indices payants (3 par scénario) : révèlent un détail chiffré sur la couche la moins bien
+  // interprétée actuellement, sans donner directement son nom.
+  function useHintToken(){
+    if(hintTokens<=0) return;
+    const sc = scenario, b = zoneBoundaries();
+    let worst = null, worstOverlap = Infinity;
+    sc.layers.forEach(l=>{
+      const thick = l.base-l.top;
+      let bestOverlap=0, bestLith=null;
+      zoneLiths.forEach((lith,i)=>{
+        const overlap = Math.max(0, Math.min(b[i+1],l.base)-Math.max(b[i],l.top));
+        if(overlap>bestOverlap){ bestOverlap=overlap; bestLith=lith; }
+      });
+      const ok = bestLith===l.lith && bestOverlap>=thick*0.5;
+      if(!ok && bestOverlap<worstOverlap){ worstOverlap=bestOverlap; worst=l; }
+    });
+    const out = document.getElementById('lgHintOutput');
+    out.style.display = 'block';
+    if(!worst){ out.textContent = 'Tout semble déjà cohérent avec vos zones actuelles.'; return; }
+    sndClick();
+    hintTokens--;
+    document.getElementById('lgHintCount').textContent = hintTokens;
+    document.getElementById('lgHintTokenBtn').disabled = hintTokens<=0;
+    const base = LITHOS[worst.lith];
+    out.textContent = `Entre ${fmtDepth(worst.top)} et ${fmtDepth(worst.base)}, le GR tourne autour de ${Math.round((worst.grTop+worst.grBase)/2)} API et le PEF autour de ${base.pef.toFixed(1)} b/e.`;
+  }
+
+  // --- Mode chrono (optionnel) : pression temporelle sur l'étape 1 uniquement.
+  let chronoMode = false, chronoInterval = null, chronoLeft = 0;
+  const CHRONO_SECONDS = 240;
+  function fmtChrono(s){ const m=Math.floor(s/60), sec=s%60; return m+':'+String(sec).padStart(2,'0'); }
+  function stopChrono(){ if(chronoInterval){ clearInterval(chronoInterval); chronoInterval=null; } }
+  function startChrono(){
+    stopChrono();
+    if(!chronoMode) return;
+    chronoLeft = CHRONO_SECONDS;
+    document.getElementById('lgChronoBar').style.display = 'block';
+    document.getElementById('lgChronoTime').textContent = fmtChrono(chronoLeft);
+    chronoInterval = setInterval(()=>{
+      chronoLeft--;
+      document.getElementById('lgChronoTime').textContent = fmtChrono(Math.max(0,chronoLeft));
+      if(chronoLeft<=0){
+        stopChrono();
+        if(gamePhase===1 && document.getElementById('lgPhase1ResultBox').style.display==='none') validateInterpretation();
+      }
+    }, 1000);
+  }
+
+  // --- Carnet de terrain (historique + tampons) et classement local de classe : deux usages
+  // distincts du même localStorage, l'un pour la progression individuelle, l'autre pour comparer.
+  function loadHistory(){ try{ return JSON.parse(localStorage.getItem('lg_history')||'[]'); }catch(e){ return []; } }
+  function renderHistoryStamps(){
+    const h = loadHistory();
+    const stamps = h.filter(e=>e.pct>=70).length;
+    document.getElementById('lgStamps').textContent = stamps>0 ? '🏅'.repeat(Math.min(stamps,20)) : 'Aucun tampon pour l\'instant — visez 70% pour en gagner un.';
+    document.getElementById('lgHistory').innerHTML = h.length
+      ? h.slice(0,8).map(e=>`${e.date} — <b style="color:var(--text)">${e.pct}%</b> (${(ENVIRONMENTS[e.env]||{}).label||e.env})`).join('<br>')
+      : 'Aucun scénario terminé pour l\'instant.';
+  }
+  function saveHistoryEntry(pct, envKey){
+    const h = loadHistory();
+    h.unshift({date:new Date().toLocaleDateString(), pct, env:envKey});
+    while(h.length>20) h.pop();
+    try{ localStorage.setItem('lg_history', JSON.stringify(h)); }catch(e){}
+    renderHistoryStamps();
+  }
+  function loadClasse(){ try{ return JSON.parse(localStorage.getItem('lg_classe_scores')||'[]'); }catch(e){ return []; } }
+  function renderClasseTable(){
+    const list = loadClasse().sort((a,b)=>b.pct-a.pct).slice(0,10);
+    document.getElementById('lgClasseTable').innerHTML = list.length
+      ? list.map((e,i)=>`${i+1}. <b style="color:var(--text)">${e.name}</b> — ${e.pct}% <span style="color:var(--muted);">(${e.date})</span>`).join('<br>')
+      : 'Aucun score enregistré pour l\'instant.';
+  }
+  function saveClasseScore(pct){
+    const name = prompt('Prénom à afficher dans le classement local :');
+    if(!name) return;
+    const list = loadClasse();
+    list.push({name: name.slice(0,24), pct, date: new Date().toLocaleDateString()});
+    try{ localStorage.setItem('lg_classe_scores', JSON.stringify(list)); }catch(e){}
+    renderClasseTable();
+  }
+  function buildPrintReport(finalScore){
+    const sc = scenario;
+    let html = `<h2>Labo Diagraphies &amp; Carottes — Rapport de puits</h2>
+      <div class="lgpr-item">Score final : <b>${finalScore.pct}%</b> (${finalScore.totalHits}/${finalScore.totalItems})</div>
+      <div class="lgpr-item">Environnement attendu : ${sc.env.label}</div>`;
+    finalScore.zoneFeedback.forEach(f=>{ html += `<div class="lgpr-item">${f.ok?'[OK]':'[X]'} ${f.label} — ${f.detail}</div>`; });
+    if(finalScore.completionFeedback){
+      const cf = finalScore.completionFeedback;
+      html += `<div class="lgpr-item">${cf.actionOk?'[OK]':'[X]'} Décision — ${cf.actionDetail}</div>`;
+      if(cf.zoneOk!==null){
+        html += `<div class="lgpr-item">${cf.zoneOk?'[OK]':'[X]'} Zone à produire — ${cf.zoneDetail}</div>`;
+        html += `<div class="lgpr-item">${cf.methodOk?'[OK]':'[X]'} Méthode de complétion — ${cf.methodDetail}</div>`;
+      }
+    }
+    const notes = document.getElementById('lgNotes').value.trim();
+    if(notes) html += `<div class="lgpr-item">Notes : ${notes.replace(/</g,'&lt;')}</div>`;
+    document.getElementById('lgPrintReport').innerHTML = html;
+  }
+
+  // --- Sons (Web Audio, synthétisés, aucun fichier à charger) : un repère sonore léger, jamais
+  // indispensable à la compréhension, coupable d'un simple bouton.
+  let soundMuted = (typeof localStorage!=='undefined' && localStorage.getItem('lg_sound_muted')==='1');
+  let audioCtx = null;
+  function ensureAudio(){
+    if(soundMuted) return null;
+    if(!audioCtx){ try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; } }
+    if(audioCtx.state==='suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function beep(freq, dur, type, vol){
+    const ctx = ensureAudio(); if(!ctx) return;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = type||'sine'; osc.frequency.value = freq;
+    gain.gain.value = vol||0.12;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
+    osc.stop(ctx.currentTime+dur);
+  }
+  function sndClick(){ beep(600,0.05,'sine',0.07); }
+  function sndPick(){ beep(440,0.07,'triangle',0.09); }
+  function sndSuccess(){ beep(523,0.12,'sine',0.11); setTimeout(()=>beep(784,0.18,'sine',0.11),90); }
+  function sndFail(){ beep(220,0.2,'sawtooth',0.09); }
+  function sndScore(pct){ if(pct>=70) sndSuccess(); else sndFail(); }
+
+  // --- Mode campagne : 6 niveaux de difficulté croissante réutilisant genScenario(cfg), plus un
+  // niveau 6 à seed fixe (même puits pour tous, utile pour une correction de classe commune).
+  const CAMPAIGN_LEVELS = [
+    {label:'Niveau 1 — Initiation', cfg:{noiseMult:0.5, nLayerRange:[3,4], washoutRange:[0,1], overlapThreshold:0.4, envPool:['fluvial','deltaic','eolian']}},
+    {label:'Niveau 2 — Facile', cfg:{noiseMult:0.8, nLayerRange:[4,5], washoutRange:[1,2], overlapThreshold:0.45, envPool:['fluvial','deltaic','eolian','turbidite']}},
+    {label:'Niveau 3 — Intermédiaire', cfg:{noiseMult:1.0, nLayerRange:[4,6], washoutRange:[1,2], overlapThreshold:0.5}},
+    {label:'Niveau 4 — Avancé', cfg:{noiseMult:1.3, nLayerRange:[5,7], washoutRange:[2,3], overlapThreshold:0.5}},
+    {label:'Niveau 5 — Expert', cfg:{noiseMult:1.6, nLayerRange:[6,8], washoutRange:[2,3], overlapThreshold:0.55}},
+    {label:'Niveau 6 — Cas commun (seed fixe)', cfg:{noiseMult:1.2, nLayerRange:[6,6], washoutRange:[2,2], overlapThreshold:0.5, forceEnv:'deltaic', seed:424242}}
+  ];
+  let campaignLevel = null; // null = mode libre
+
+  function loadCampaignProgress(){ try{ return JSON.parse(localStorage.getItem('lg_campaign_progress')||'{}'); }catch(e){ return {}; } }
+  function saveCampaignProgress(p){ try{ localStorage.setItem('lg_campaign_progress', JSON.stringify(p)); }catch(e){} }
+  function loadMistakes(){ try{ return JSON.parse(localStorage.getItem('lg_campaign_mistakes')||'{}'); }catch(e){ return {}; } }
+  function topEntries(obj, n){ return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n); }
+
+  function renderCampaignLevels(){
+    const prog = loadCampaignProgress();
+    const unlocked = prog.unlockedLevel || 1;
+    const best = prog.bestScores || [];
+    document.getElementById('lgCampaignLevels').innerHTML = CAMPAIGN_LEVELS.map((lv,i)=>{
+      const n = i+1, isLocked = n>unlocked, isDone = best[i]!=null;
+      return `<div class="lg-camp-level ${isLocked?'locked':''} ${isDone?'done':''}" ${isLocked?'':`data-level="${n}"`}>
+        <div class="lg-camp-badge">${isLocked?'🔒':isDone?'✓':n}</div>
+        <div class="lg-camp-info">${lv.label}<div class="lg-camp-score">${isDone?'Meilleur score : '+best[i]+'%':(isLocked?'Verrouillé':'Pas encore joué')}</div></div>
+      </div>`;
+    }).join('');
+    document.getElementById('lgCampaignLevels').querySelectorAll('[data-level]').forEach(el=>{
+      el.addEventListener('click', ()=> startCampaignLevel(parseInt(el.dataset.level,10)));
+    });
+    const recapBox = document.getElementById('lgCampaignRecapBox');
+    if(best.length && best.slice(0,6).filter(s=>s!=null).length===6){
+      recapBox.style.display = 'block';
+      renderCampaignRecap();
+    } else recapBox.style.display = 'none';
+  }
+  function startCampaignLevel(n){
+    campaignLevel = n;
+    document.getElementById('lgCampaignSheet').classList.remove('open');
+    document.getElementById('lgCampaignBar').style.display = 'block';
+    document.getElementById('lgCampaignLabel').textContent = `Niveau ${n}/6 — ${CAMPAIGN_LEVELS[n-1].label.replace(/^Niveau \d+ — /,'')}`;
+    newScenario(CAMPAIGN_LEVELS[n-1].cfg);
+  }
+  function recordMistakes(finalScore){
+    const sc = scenario, b = zoneBoundaries();
+    const m = loadMistakes();
+    m.lith = m.lith || {}; m.fluid = m.fluid || {}; m.env = m.env || {};
+    sc.layers.forEach(l=>{
+      let best=null, bestOverlap=0;
+      zoneLiths.forEach((lith,i)=>{
+        const overlap = Math.max(0, Math.min(b[i+1],l.base)-Math.max(b[i],l.top));
+        if(overlap>bestOverlap){ bestOverlap=overlap; best={lith, fluid:zoneFluids[i]}; }
+      });
+      if(!best || best.lith!==l.lith){
+        const key = `${best&&best.lith?LITHOS[best.lith].label:'aucune zone'} → ${LITHOS[l.lith].label}`;
+        m.lith[key] = (m.lith[key]||0)+1;
+      }
+      const trueFluid = l.isReservoir ? l.fluid : 'none';
+      if(!best || best.fluid!==trueFluid){
+        const guessLabel = best&&best.fluid ? (best.fluid==='none'?'non réservoir':FLUIDS[best.fluid].label) : 'non précisé';
+        const trueLabel = trueFluid==='none' ? 'non réservoir' : FLUIDS[trueFluid].label;
+        const key = `${guessLabel} → ${trueLabel}`;
+        m.fluid[key] = (m.fluid[key]||0)+1;
+      }
+    });
+    if(!finalScore.envOk){
+      const key = `${pickedEnv?ENVIRONMENTS[pickedEnv].label:'non précisé'} → ${sc.env.label}`;
+      m.env[key] = (m.env[key]||0)+1;
+    }
+    try{ localStorage.setItem('lg_campaign_mistakes', JSON.stringify(m)); }catch(e){}
+  }
+  function renderCampaignRecap(){
+    const m = loadMistakes();
+    const sections = [['Lithologie', m.lith||{}], ['Fluide', m.fluid||{}], ['Environnement', m.env||{}]];
+    document.getElementById('lgCampaignRecap').innerHTML = sections.map(([label,obj])=>{
+      const top = topEntries(obj,3);
+      if(!top.length) return `<div style="margin-bottom:8px;"><b>${label}</b> : aucune confusion récurrente notée.</div>`;
+      return `<div style="margin-bottom:8px;"><b>${label}</b><br>${top.map(([k,v])=>`${k} <span style="color:var(--muted);">(×${v})</span>`).join('<br>')}</div>`;
+    }).join('');
+  }
+
+  let gamePhase = 1; // 1 = diagraphies seules, 2 = diagraphies + carottes
+  let phase1Score = null;
+
+  function newScenario(cfg){
+    if(!cfg){ campaignLevel = null; document.getElementById('lgCampaignBar').style.display = 'none'; }
+    scenario = genScenario(cfg);
+    initZones();
+    pickedEnv = '';
+    pickedAction = null;
+    pickedProdZoneIdx = null;
+    pickedMethod = null;
+    gamePhase = 1;
+    phase1Score = null;
+    lastFinalScore = null;
+    hintTokens = 3;
+    document.getElementById('lgHintCount').textContent = hintTokens;
+    document.getElementById('lgHintTokenBtn').disabled = false;
+    document.getElementById('lgHintOutput').style.display = 'none';
+    document.getElementById('lgNotes').value = '';
+    renderEnvChips();
+    document.getElementById('lgCoreBox').style.display = 'none';
+    document.getElementById('lgPhase1ResultBox').style.display = 'none';
+    document.getElementById('lgFeedbackBox').style.display = 'none';
+    document.getElementById('lgRevealCoresBtn').disabled = false;
+    document.getElementById('lgRevealCoresBtn').textContent = '🪨 Récupérer les carottes →';
+    document.getElementById('lgValidateBtn').textContent = '✓ Valider l\'interprétation (diagraphies seules)';
+    document.getElementById('lgStepTag1').className = 'lg-step active';
+    document.getElementById('lgStepTag2').className = 'lg-step';
+    renderLogSvg();
+    renderZonePanel();
+    renderCoreList();
+    renderHistoryStamps();
+    renderClasseTable();
+    startChrono();
+    window.__lgLastScenario = scenario; // hook de debug/test, sans effet sur le jeu
+  }
+
+  // Calcule le score courant (zones : lithologie + fluide, environnement) à partir de l'état actuel,
+  // sans rien afficher — utilisé par les deux étapes.
+  function computeScore(){
+    const sc = scenario;
+    const b = zoneBoundaries();
+    const parsedZones = zoneLiths.map((lith,i)=>({top:b[i], base:b[i+1], lith, fluid:zoneFluids[i], conf:zoneConf[i]})).filter(z=>z.lith);
+    let zoneHits = 0, fluidHits = 0;
+    const zoneFeedback = [];
+    const overlapThreshold = sc.overlapThreshold ?? 0.5;
+    sc.layers.forEach(l=>{
+      const thick = l.base-l.top;
+      let best = null, bestOverlap = 0;
+      parsedZones.forEach(z=>{
+        const overlap = Math.max(0, Math.min(z.base,l.base)-Math.max(z.top,l.top));
+        if(overlap>bestOverlap){ bestOverlap=overlap; best=z; }
+      });
+      const coveredEnough = bestOverlap >= thick*overlapThreshold;
+      const lithOk = best && best.lith===l.lith;
+      const trueFluid = l.isReservoir ? l.fluid : 'none';
+      const fluidOk = !!(coveredEnough && best && best.fluid===trueFluid);
+      if(coveredEnough && lithOk) zoneHits++;
+      if(fluidOk) fluidHits++;
+      const fluidLabel = trueFluid==='none' ? 'non réservoir' : FLUIDS[trueFluid].label;
+      let confNote = '';
+      const bothOk = coveredEnough && lithOk && fluidOk;
+      if(best && best.conf==='incertain' && !bothOk) confNote = ' Prudence justifiée : vous aviez signalé un doute.';
+      else if(best && best.conf==='sur' && !bothOk) confNote = ' ⚠️ Vous étiez sûr(e), pourtant ce n\'était pas exact.';
+      else if(best && best.conf==='incertain' && bothOk) confNote = ' Vous doutiez, mais c\'était pourtant correct !';
+      zoneFeedback.push({
+        label:`${fmtDepth(l.top)}–${fmtDepth(l.base)}`,
+        ok: bothOk,
+        detail: (coveredEnough
+          ? (lithOk ? `Lithologie correcte : ${LITHOS[l.lith].label}.` : `Zone repérée, mais lithologie attendue : ${LITHOS[l.lith].label} (GR ${LITHOS[l.lith].gr[0]}-${LITHOS[l.lith].gr[1]} API).`)
+            + ' ' + (fluidOk ? `Fluide correct : ${fluidLabel}.` : `Fluide attendu : ${fluidLabel}.`)
+          : `Zone non repérée ou mal délimitée. Il s'agit de ${LITHOS[l.lith].label} (${fluidLabel}) entre ${fmtDepth(l.top)} et ${fmtDepth(l.base)}.`
+        ) + confNote
+      });
+    });
+
+    const envOk = pickedEnv === sc.envKey;
+
+    // Décision de complétion (fermer / produire → où → comment) : seulement évaluée une fois les
+    // carottes vues, puisque la perméabilité réelle — donc le besoin de stimuler et le choix de la
+    // méthode — n'est indiquée nulle part dans les diagraphies, seule la carotte en donne un indice.
+    // L'objectif pédagogique : trancher vite plutôt que de s'acharner sur un puits qui ne vaut rien.
+    let completionFeedback = null;
+    if(gamePhase===2){
+      const hcLayer = sc.layers.find(l=>l.isReservoir && (l.fluid==='oil'||l.fluid==='gas'));
+      const trueAction = hcLayer ? 'produce' : 'abandon';
+      const actionOk = pickedAction === trueAction;
+      let zoneOk = null, methodOk = null, zoneDetail = null, methodDetail = null, actionDetail;
+      if(hcLayer){
+        actionDetail = actionOk
+          ? `Bonne décision : ce puits mérite d'être mis en production (${FLUIDS[hcLayer.fluid].label} présent).`
+          : `Ce puits contient pourtant de l'hydrocarbure valorisable (${FLUIDS[hcLayer.fluid].label}, ${fmtDepth(hcLayer.top)}–${fmtDepth(hcLayer.base)}) : l'abandonner aurait été une erreur.`;
+        const pickedZone = (pickedProdZoneIdx!==null && pickedProdZoneIdx>=0 && zoneLiths[pickedProdZoneIdx]) ? {top:b[pickedProdZoneIdx], base:b[pickedProdZoneIdx+1]} : null;
+        const overlap = pickedZone ? Math.max(0, Math.min(pickedZone.base,hcLayer.base)-Math.max(pickedZone.top,hcLayer.top)) : 0;
+        zoneOk = overlap >= (hcLayer.base-hcLayer.top)*0.5;
+        zoneDetail = zoneOk ? `Bon choix de zone : elle contient bien l'hydrocarbure.` : `Zone de production attendue : ${fmtDepth(hcLayer.top)}–${fmtDepth(hcLayer.base)}.`;
+        const trueMethod = !hcLayer.tight ? 'natural' : (CARBONATE_LITHS.includes(hcLayer.lith) ? 'acid' : 'frack');
+        methodOk = pickedMethod === trueMethod;
+        methodDetail = methodOk
+          ? (trueMethod==='natural' ? 'Écoulement naturel suffisant, bien vu — pas de coût de stimulation inutile.'
+            : trueMethod==='acid' ? 'Acidification pertinente ici : roche carbonatée (l\'acide dissout le calcaire/la dolomie), bien vu.'
+            : 'Fracturation nécessaire ici, bien vu — roche tight non carbonatée, l\'acide n\'y aurait rien fait.')
+          : (trueMethod==='natural' ? 'Cette roche était en réalité bien perméable (voir la carotte) : une stimulation aurait été un coût inutile.'
+            : trueMethod==='acid' ? `Roche carbonatée (${LITHOS[hcLayer.lith].label}) et peu perméable : l'acide aurait dissous la roche et ouvert des chenaux, la fracturation n'était pas le bon outil ici.`
+            : `Roche non carbonatée (${LITHOS[hcLayer.lith].label}) et peu perméable : l'acide n'a aucun effet sur le quartz, seule la fracturation aurait fonctionné.`);
+      } else {
+        actionDetail = actionOk
+          ? 'Bon réflexe : aucune zone ne mérite d\'être mise en production, autant fermer le puits tout de suite.'
+          : 'Aucune des zones ne contient d\'hydrocarbure valorisable : la bonne décision était de fermer le puits.';
+      }
+      completionFeedback = {actionOk, zoneOk, methodOk, actionDetail, zoneDetail, methodDetail};
+    }
+    const completionItems = completionFeedback ? (completionFeedback.zoneOk!==null ? 3 : 1) : 0;
+    const completionHits = completionFeedback ? ((completionFeedback.actionOk?1:0) + (completionFeedback.zoneOk!==null ? (completionFeedback.zoneOk?1:0)+(completionFeedback.methodOk?1:0) : 0)) : 0;
+
+    const totalItems = sc.layers.length*2 + 1 + completionItems;
+    const totalHits = zoneHits + fluidHits + (envOk?1:0) + completionHits;
+    const pct = Math.round(100*totalHits/totalItems);
+
+    return {pct, totalHits, totalItems, zoneFeedback, envOk, completionFeedback};
+  }
+
+  function feedbackHtml(res, title){
+    const sc = scenario;
+    let html = `<div class="lg-score-big">${title}${res.pct}% (${res.totalHits}/${res.totalItems})</div>`;
+    html += res.zoneFeedback.map(f=>`<div class="lg-fb-item ${f.ok?'lg-fb-ok':'lg-fb-bad'}">${f.ok?'✓':'✗'} Couche ${f.label} — ${f.detail}</div>`).join('');
+    html += `<div class="lg-fb-item ${res.envOk?'lg-fb-ok':'lg-fb-bad'}">${res.envOk?'✓':'✗'} Environnement de dépôt : ${res.envOk?'correct':'attendu '+sc.env.label}. ${sc.env.note}</div>`;
+    if(res.completionFeedback){
+      const cf = res.completionFeedback;
+      html += `<div class="lg-fb-item ${cf.actionOk?'lg-fb-ok':'lg-fb-bad'}">${cf.actionOk?'✓':'✗'} Décision — ${cf.actionDetail}</div>`;
+      if(cf.zoneOk!==null){
+        html += `<div class="lg-fb-item ${cf.zoneOk?'lg-fb-ok':'lg-fb-bad'}">${cf.zoneOk?'✓':'✗'} Zone à produire — ${cf.zoneDetail}</div>`;
+        html += `<div class="lg-fb-item ${cf.methodOk?'lg-fb-ok':'lg-fb-bad'}">${cf.methodOk?'✓':'✗'} Méthode de complétion — ${cf.methodDetail}</div>`;
+      }
+    }
+    return html;
+  }
+
+  function validateInterpretation(){
+    if(gamePhase===1){
+      stopChrono();
+      document.getElementById('lgChronoBar').style.display = 'none';
+      phase1Score = computeScore();
+      sndScore(phase1Score.pct);
+      document.getElementById('lgPhase1Result').innerHTML = feedbackHtml(phase1Score, '');
+      document.getElementById('lgPhase1ResultBox').style.display = 'block';
+      document.getElementById('lgPhase1ResultBox').scrollIntoView({behavior:'smooth', block:'nearest'});
+    } else {
+      const finalScore = computeScore();
+      lastFinalScore = finalScore;
+      sndScore(finalScore.pct);
+      let html = '';
+      if(phase1Score){
+        const delta = finalScore.pct - phase1Score.pct;
+        html += `<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Étape 1 (diagraphies seules) : <b style="color:var(--text)">${phase1Score.pct}%</b> → Étape 2 (final, avec carottes) : <b style="color:var(--text)">${finalScore.pct}%</b> (${delta>=0?'+':''}${delta} points)</div>`;
+      }
+      html += feedbackHtml(finalScore, '');
+      document.getElementById('lgFeedback').innerHTML = html;
+      document.getElementById('lgFeedbackBox').style.display = 'block';
+      document.getElementById('lgFeedbackBox').scrollIntoView({behavior:'smooth', block:'nearest'});
+      saveHistoryEntry(finalScore.pct, scenario.envKey);
+      if(campaignLevel){
+        recordMistakes(finalScore);
+        const prog = loadCampaignProgress();
+        prog.bestScores = prog.bestScores || [];
+        prog.bestScores[campaignLevel-1] = Math.max(prog.bestScores[campaignLevel-1]||0, finalScore.pct);
+        prog.unlockedLevel = Math.max(prog.unlockedLevel||1, Math.min(6, campaignLevel+1));
+        saveCampaignProgress(prog);
+        const lvl = campaignLevel;
+        const nextHtml = lvl<6
+          ? `<div style="margin-top:10px;font-size:11px;color:var(--amber);">🎯 Niveau ${lvl}/6 terminé.</div><button class="start-btn" id="lgNextLevelBtn" style="margin-top:6px;">Niveau suivant →</button>`
+          : `<div style="margin-top:10px;font-size:11px;color:var(--amber);">🎯 Campagne terminée !</div><button class="start-btn" id="lgNextLevelBtn" style="margin-top:6px;">📋 Voir le récap de campagne</button>`;
+        document.getElementById('lgFeedback').insertAdjacentHTML('beforeend', nextHtml);
+        document.getElementById('lgNextLevelBtn').addEventListener('click', ()=>{
+          if(lvl<6) startCampaignLevel(lvl+1);
+          else document.getElementById('lgCampaignBtn').click();
+        });
+      }
+    }
+  }
+
+  function revealCores(){
+    gamePhase = 2;
+    document.getElementById('lgCoreBox').style.display = 'block';
+    document.getElementById('lgCompletionBox').style.display = 'block';
+    renderProdZoneChips();
+    document.getElementById('lgStepTag1').className = 'lg-step done';
+    document.getElementById('lgStepTag2').className = 'lg-step active';
+    document.getElementById('lgRevealCoresBtn').disabled = true;
+    document.getElementById('lgRevealCoresBtn').textContent = '✓ Carottes récupérées';
+    document.getElementById('lgValidateBtn').textContent = '✓ Valider l\'interprétation finale (diagraphies + carottes)';
+    document.getElementById('lgCoreBox').scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+
+  function lgOpen(){
+    document.getElementById('logGameModal').classList.add('open');
+    if(!scenario) newScenario();
+  }
+  function lgClose(){
+    document.getElementById('logGameModal').classList.remove('open');
+    stopChrono();
+  }
+
+  document.getElementById('logGameOpenBtn')?.addEventListener('click', lgOpen);
+  document.getElementById('lgCloseBtn')?.addEventListener('click', lgClose);
+  document.getElementById('lgNewScenarioBtn')?.addEventListener('click', newScenario);
+  document.getElementById('lgAddZoneBtn')?.addEventListener('click', addDivider);
+  document.getElementById('lgHintTokenBtn')?.addEventListener('click', useHintToken);
+  document.getElementById('lgSheetCloseBtn')?.addEventListener('click', ()=> document.getElementById('lgLithSheet').classList.remove('open'));
+  document.getElementById('lgLithSheet')?.addEventListener('click', e=>{ if(e.target.id==='lgLithSheet') e.currentTarget.classList.remove('open'); });
+  document.getElementById('lgGlossaryBtn')?.addEventListener('click', ()=>{ renderGlossary(); document.getElementById('lgGlossarySheet').classList.add('open'); });
+  document.getElementById('lgGlossaryCloseBtn')?.addEventListener('click', ()=> document.getElementById('lgGlossarySheet').classList.remove('open'));
+  document.getElementById('lgGlossarySheet')?.addEventListener('click', e=>{ if(e.target.id==='lgGlossarySheet') e.currentTarget.classList.remove('open'); });
+  document.getElementById('lgRefBtn')?.addEventListener('click', ()=>{ renderReferences(); document.getElementById('lgRefSheet').classList.add('open'); });
+  document.getElementById('lgRefCloseBtn')?.addEventListener('click', ()=> document.getElementById('lgRefSheet').classList.remove('open'));
+  document.getElementById('lgRefSheet')?.addEventListener('click', e=>{ if(e.target.id==='lgRefSheet') e.currentTarget.classList.remove('open'); });
+  document.getElementById('lgChronoToggleBtn')?.addEventListener('click', e=>{
+    chronoMode = !chronoMode;
+    e.currentTarget.classList.toggle('active', chronoMode);
+    if(chronoMode) startChrono(); else { stopChrono(); document.getElementById('lgChronoBar').style.display='none'; }
+  });
+  document.getElementById('lgColorblindToggleBtn')?.addEventListener('click', e=>{
+    colorblindMode = !colorblindMode;
+    try{ localStorage.setItem('lg_colorblind', colorblindMode?'1':'0'); }catch(err){}
+    e.currentTarget.classList.toggle('active', colorblindMode);
+    renderLogSvg();
+    renderZonePanel();
+  });
+  document.getElementById('lgColorblindToggleBtn')?.classList.toggle('active', colorblindMode);
+  document.getElementById('lgSoundToggleBtn')?.addEventListener('click', e=>{
+    soundMuted = !soundMuted;
+    try{ localStorage.setItem('lg_sound_muted', soundMuted?'1':'0'); }catch(err){}
+    e.currentTarget.textContent = soundMuted ? '🔇 Son' : '🔈 Son';
+    e.currentTarget.classList.toggle('active', !soundMuted);
+    if(!soundMuted) sndClick();
+  });
+  document.getElementById('lgSoundToggleBtn')?.classList.toggle('active', !soundMuted);
+  document.getElementById('lgSoundToggleBtn') && (document.getElementById('lgSoundToggleBtn').textContent = soundMuted ? '🔇 Son' : '🔈 Son');
+  document.getElementById('lgCampaignBtn')?.addEventListener('click', ()=>{ renderCampaignLevels(); document.getElementById('lgCampaignSheet').classList.add('open'); });
+  document.getElementById('lgCampaignCloseBtn')?.addEventListener('click', ()=> document.getElementById('lgCampaignSheet').classList.remove('open'));
+  document.getElementById('lgCampaignSheet')?.addEventListener('click', e=>{ if(e.target.id==='lgCampaignSheet') e.currentTarget.classList.remove('open'); });
+  document.getElementById('lgValidateBtn')?.addEventListener('click', validateInterpretation);
+  document.getElementById('lgRevealCoresBtn')?.addEventListener('click', revealCores);
+  document.getElementById('lgPrintBtn')?.addEventListener('click', ()=>{ if(lastFinalScore){ buildPrintReport(lastFinalScore); window.print(); } });
+  document.getElementById('lgSaveClasseBtn')?.addEventListener('click', ()=>{ if(lastFinalScore) saveClasseScore(lastFinalScore.pct); });
+  document.getElementById('lgHintToggleBtn')?.addEventListener('click', (e)=>{
+    const box = document.getElementById('lgHintBox');
+    box.classList.toggle('show');
+    e.target.textContent = (box.classList.contains('show')?'▾':'▸') + ' Aide-mémoire : comment lire ces diagraphies';
+  });
 })();
 </script>
 
