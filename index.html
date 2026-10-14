@@ -4498,7 +4498,12 @@ function renderSection(){
   const W=460, H=320, MARG={t:38, b:34, l:52, r:14};
   const PW = W-MARG.l-MARG.r, PH = H-MARG.t-MARG.b;
   svgEl.setAttribute('viewBox',`0 0 ${W} ${H}`);
-  svgEl.setAttribute('width','100%'); svgEl.setAttribute('height','auto');
+  // Pas de hauteur explicite : avec un viewBox et width:100%, le SVG se
+  // redimensionne nativement en conservant son ratio (comportement
+  // "height:auto" standard pour un élément remplacé) — poser
+  // height="auto" sur l'attribut SVG est invalide et logue une erreur
+  // console sans effet, contrairement à la propriété CSS du même nom.
+  svgEl.setAttribute('width','100%'); svgEl.removeAttribute('height');
 
   // ── Collecter tous les blocs du profil + leurs données estimées ──
   const profileBlocks = getProfileBlocks(G.sectionA, G.sectionB);
