@@ -9377,13 +9377,57 @@ function _doStartGame(){
     try{ localStorage.setItem('lg_classe_scores', JSON.stringify(list)); }catch(e){}
     renderClasseTable();
   }
+  // Colonne litho + courbe GR en noir et blanc, pensée pour l'impression (pas de dépendance aux
+  // couleurs du thème — un rapport imprimé en N&B doit rester lisible).
+  function buildPrintLogSvg(sc){
+    const W = 260, H = 420, colW = 60, chartX = colW + 50, chartW = 150, marginTop = 24, marginBot = 10;
+    const pxPerM = (H-marginTop-marginBot) / (sc.totalDepth-sc.depthTop0);
+    const y = d => marginTop + (d-sc.depthTop0)*pxPerM;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" style="display:block;margin:8px auto;">`;
+    svg += `<text x="4" y="12" font-size="9" font-family="monospace" fill="#000">Lithologie</text>`;
+    svg += `<text x="${chartX}" y="12" font-size="9" font-family="monospace" fill="#000">GR (API)</text>`;
+    sc.layers.forEach(l=>{
+      const yt = y(l.top), yb = y(l.base);
+      svg += `<rect x="4" y="${yt.toFixed(1)}" width="${colW}" height="${Math.max(1,yb-yt).toFixed(1)}" fill="${LITHOS[l.lith].color}" stroke="#000" stroke-width="0.6"/>`;
+      if(yb-yt > 9){
+        svg += `<text x="${4+colW/2}" y="${((yt+yb)/2+2.5).toFixed(1)}" font-size="6" font-family="monospace" text-anchor="middle" fill="#000">${LITHOS[l.lith].label}</text>`;
+      }
+      if(l.isReservoir && l.fluid!=='water' && l.fluid!=='dry'){
+        svg += `<text x="${4+colW+3}" y="${((yt+yb)/2+2.5).toFixed(1)}" font-size="7" font-family="monospace" fill="#000">◀ ${FLUIDS[l.fluid].label}</text>`;
+      }
+      svg += `<text x="2" y="${(yt+3).toFixed(1)}" font-size="6" font-family="monospace" fill="#000">${fmtDepth(l.top)}</text>`;
+    });
+    svg += `<text x="2" y="${(y(sc.totalDepth)+3).toFixed(1)}" font-size="6" font-family="monospace" fill="#000">${fmtDepth(sc.totalDepth)}</text>`;
+    svg += `<rect x="${chartX}" y="${marginTop}" width="${chartW}" height="${(H-marginTop-marginBot).toFixed(1)}" fill="none" stroke="#000" stroke-width="0.6"/>`;
+    const grPts = sc.depths.map((d,i)=>{
+      const frac = clamp((sc.curves.gr[i]-0)/150, 0, 1);
+      return `${(chartX+frac*chartW).toFixed(1)},${y(d).toFixed(1)}`;
+    }).join(' ');
+    svg += `<polyline points="${grPts}" fill="none" stroke="#000" stroke-width="1"/>`;
+    svg += `</svg>`;
+    return svg;
+  }
+
   function buildPrintReport(finalScore){
     const sc = scenario;
+    const hcLayer = sc.layers.find(l=>l.isReservoir && (l.fluid==='oil'||l.fluid==='gas'));
     let html = `<h2>Labo Diagraphies &amp; Carottes — Rapport de puits</h2>
+      <div class="lgpr-item">Date : ${new Date().toLocaleString()}</div>
+      <div class="lgpr-item">Puits synthétique : ${fmtDepth(sc.depthTop0)} – ${fmtDepth(sc.totalDepth)} (${sc.layers.length} couches)</div>
       <div class="lgpr-item">Score final : <b>${finalScore.pct}%</b> (${finalScore.totalHits}/${finalScore.totalItems})</div>
-      <div class="lgpr-item">Environnement attendu : ${sc.env.label}</div>`;
-    finalScore.zoneFeedback.forEach(f=>{ html += `<div class="lgpr-item">${f.ok?'[OK]':'[X]'} ${f.label} — ${f.detail}</div>`; });
+      <div class="lgpr-item">Environnement attendu : <b>${sc.env.label}</b><br>${sc.env.note}</div>`;
+    html += buildPrintLogSvg(sc);
+    html += `<h3 style="margin:10px 0 4px;font-size:12px;">Détail par couche</h3>`;
+    finalScore.zoneFeedback.forEach((f,i)=>{
+      const l = sc.layers[i];
+      const poroTxt = l.isReservoir ? ` · Porosité : ${Math.round(l.phi*100)}%` : '';
+      html += `<div class="lgpr-item">${f.ok?'[OK]':'[X]'} ${f.label} — ${f.detail}<br>
+        <span style="color:#555;">GR attendu ${LITHOS[l.lith].gr[0]}-${LITHOS[l.lith].gr[1]} API${poroTxt}</span></div>`;
+    });
+    html += `<h3 style="margin:10px 0 4px;font-size:12px;">Échantillons de carotte</h3>`;
+    sc.coreSamples.forEach(cs=>{ html += `<div class="lgpr-item">🪨 ${fmtDepth(cs.depth)} — ${cs.text}</div>`; });
     if(finalScore.completionFeedback){
+      html += `<h3 style="margin:10px 0 4px;font-size:12px;">Décision de complétion</h3>`;
       const cf = finalScore.completionFeedback;
       html += `<div class="lgpr-item">${cf.actionOk?'[OK]':'[X]'} Décision — ${cf.actionDetail}</div>`;
       if(cf.zoneOk!==null){
